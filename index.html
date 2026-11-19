@@ -233,7 +233,7 @@ pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(-
 /* ============ Constants ============ */
 const TZ = "Africa/Nairobi";
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const EXPENSE_CATS = ["Service", "Repairs & parts", "Tyres", "Insurance", "Inspection & licences", "Tracker", "Platform fees", "Fines & penalties", "Accident damage", "Car wash & other"];
+const EXPENSE_CATS = ["Service", "Repairs & parts", "Tyres", "Fuel", "Insurance", "Inspection & licences", "Tracker", "Platform fees", "Fines & penalties", "Accident damage", "Car wash & other"];
 const DOWN_REASONS = [
   { v: "Service / repair", excused: true },
   { v: "Accident", excused: true },
@@ -327,7 +327,7 @@ function compute() {
   }
 
   const ds = {}, cs = {}, fleetM = {};
-  const dInit = id => ds[id] || (ds[id] = { expAll: 0, expP: 0, payAll: 0, payP: 0, chgAll: 0, chgP: 0, lastPay: null });
+  const dInit = id => ds[id] || (ds[id] = { expAll: 0, expP: 0, payAll: 0, payP: 0, chgAll: 0, chgP: 0, credAll: 0, credP: 0, lastPay: null });
   const cInit = id => cs[id] || (cs[id] = { expP: 0, revP: 0, revAll: 0, costP: 0, costAll: 0, earnP: 0, denomP: 0, downP: 0, idleP: 0, kmP: 0, revM: {}, costM: {} });
   const fInit = m => fleetM[m] || (fleetM[m] = { rev: 0, cost: 0, exp: 0 });
   S.drivers.forEach(d => dInit(d.id));
@@ -371,6 +371,8 @@ function compute() {
     fInit(monthOf(x.date)).cost += amt;
     if (x.carId) { const c = cInit(x.carId); c.costAll += amt; c.costM[monthOf(x.date)] = (c.costM[monthOf(x.date)] || 0) + amt; if (inP(x.date)) c.costP += amt; }
     if (x.chargeDriver && x.driverId) { const dst = dInit(x.driverId); dst.chgAll += amt; if (inP(x.date)) dst.chgP += amt; }
+    // A car cost the driver paid from their own money: still the owner's cost, and deducted from what the driver owes
+    else if (x.driverPaid && x.driverId) { const dst = dInit(x.driverId); dst.credAll += amt; if (inP(x.date)) dst.credP += amt; }
   }
   // Odometer
   const odoBy = {};
@@ -393,11 +395,14 @@ function compute() {
   // Driver balances
   const drivers = S.drivers.map(d => {
     const s = ds[d.id], a = currentAssignForDriver(d.id);
-    const balance = (Number(d.openingBalance) || 0) + s.expAll + s.chgAll - s.payAll;
+    const st = d.settlement || null;
+    const settleAmt = st ? (Number(st.depositUsed) || 0) + (Number(st.writeOff) || 0) - (Number(st.refund) || 0) : 0;
+    const balance = (Number(d.openingBalance) || 0) + s.expAll + s.chgAll - s.payAll - s.credAll - settleAmt;
     const rate = a ? Number(a.rate) || 0 : 0;
     const daysBehind = rate ? balance / rate : 0;
     let status = "good", statusLabel = "Up to date";
-    if (balance < -1) { status = "good"; statusLabel = "In credit"; }
+    if (st && Math.abs(balance) <= 1) { status = "neutral"; statusLabel = "Settled"; }
+    else if (balance < -1) { status = "good"; statusLabel = "In credit"; }
     else if (balance > 1) { if (daysBehind > Number(S.settings.arrearsDays || 2)) { status = "bad"; statusLabel = "In arrears"; } else { status = "warn"; statusLabel = "Slightly behind"; } }
     return { ...d, ...s, balance, rate, daysBehind, assign: a, status, statusLabel, collRateP: s.expP + s.chgP ? s.payP / (s.expP + s.chgP) : NaN };
   });
@@ -877,7 +882,7 @@ function recordList(kind, rows) {
   if (!rows.length) return `<div class="card empty">Nothing recorded yet.</div>`;
   const line = r => {
     if (kind === "payments") return [`${esc(driverName(r.driverId))} ${r.carId ? plate(carLabel(r.carId)) : ""}`, `${fmtDate(r.date)} · ${esc(r.method || "")}${r.ref ? " · " + esc(r.ref) : ""}`, ksh(r.amount)];
-    if (kind === "expenses") return [`${esc(r.category)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.date)}${r.vendor ? " · " + esc(r.vendor) : ""}${r.chargeDriver ? " · charged to " + esc(driverName(r.driverId)) : ""}${r.note ? " · " + esc(r.note) : ""}`, ksh(r.amount)];
+    if (kind === "expenses") return [`${esc(r.category)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.date)}${r.vendor ? " · " + esc(r.vendor) : ""}${r.chargeDriver ? " · charged to " + esc(driverName(r.driverId)) : r.driverPaid ? " · paid by " + esc(driverName(r.driverId)) + ", deducted from what they owe" : ""}${r.note ? " · " + esc(r.note) : ""}`, ksh(r.amount)];
     if (kind === "downtime") return [`${esc(r.reason)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.from)} → ${r.to ? fmtDate(r.to) : "still off road"}${r.excused === false ? " · driver still owes" : " · driver not charged"}${r.note ? " · " + esc(r.note) : ""}`, `${dayDiff(r.from, r.to || todayStr()) + 1} day(s)`];
     return [`${plate(carLabel(r.carId))}`, fmtDate(r.date), `${Number(r.km).toLocaleString()} km`];
   };
@@ -935,10 +940,22 @@ function driverDetail(c, id) {
   const d = c.drivers.find(x => x.id === id); if (!d) { S.detail = null; return viewDrivers(c); }
   const pays = all("payments").filter(p => p.driverId === id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15);
   const chg = all("expenses").filter(x => x.chargeDriver && x.driverId === id).sort((a, b) => b.date.localeCompare(a.date));
+  const cred = all("expenses").filter(x => x.driverPaid && !x.chargeDriver && x.driverId === id).sort((a, b) => b.date.localeCompare(a.date));
   const hist = S.assigns.filter(a => a.driverId === id).sort((a, b) => b.start.localeCompare(a.start));
-  return `<div class="section"><div class="row-actions"><button class="btn sm" data-action="back">← All drivers</button></div>
+  const st = d.settlement;
+  const lastEnd = hist.length && hist.every(a => a.end) ? hist.map(a => a.end).sort().pop() : "";
+  const left = st && st.leftDate ? st.leftDate : (d.status === "left" ? lastEnd : "");
+  const banner = st ? `<div class="banner" style="background:var(--accent-soft)">${left ? `Left the fleet on ${fmtDate(left)}. ` : ""}Settled ${fmtDate(st.date)}: ${[
+      Number(st.depositUsed) ? `used deposit ${ksh(st.depositUsed)}` : "",
+      Number(st.writeOff) ? `wrote off ${ksh(st.writeOff)}` : "",
+      Number(st.refund) ? `refunded ${ksh(st.refund)}` : ""].filter(Boolean).join(", ") || "nothing owed either way"}${st.note ? ` · ${esc(st.note)}` : ""}</div>`
+    : left ? `<div class="banner">Left the fleet on ${fmtDate(left)}.${Math.abs(d.balance) > 1 ? ` ${d.balance > 0 ? `Still owes ${ksh(d.balance)}` : `${ksh(-d.balance)} in credit`}: settle it when you've agreed how.` : ""}</div>` : "";
+  const totalPaid = d.payAll + d.credAll;
+  const deposit = Number(d.deposit) || 0, depUsed = st ? Number(st.depositUsed) || 0 : 0;
+  const settleBtn = S.canManage && !d.assign ? (st ? `<button class="btn sm" data-action="settle-driver" data-v="${id}">Edit settlement</button>` : `<button class="btn sm" data-action="settle-driver" data-v="${id}">Settle and close</button>`) : "";
+  return `${banner}<div class="section"><div class="row-actions"><button class="btn sm" data-action="back">← All drivers</button></div>
   <div class="section-head"><h2>${esc(d.name)}</h2>${pill(d.status, d.statusLabel)}</div>
-  <div class="row-actions">${S.canWrite ? `<button class="btn primary sm" data-action="new-payment" data-v="${id}">Record payment</button><button class="btn sm" data-action="edit-driver" data-v="${id}">Edit driver</button><button class="btn sm" data-action="new-assign" data-v="driver:${id}">${d.assign ? "Change car" : "Assign to car"}</button>` : ""}<button class="btn sm" data-action="statement" data-v="${id}">Share statement</button></div>
+  <div class="row-actions">${S.canWrite ? `<button class="btn primary sm" data-action="new-payment" data-v="${id}">Record payment</button><button class="btn sm" data-action="edit-driver" data-v="${id}">Edit driver</button><button class="btn sm" data-action="new-assign" data-v="driver:${id}">${d.assign ? "Change car" : "Assign to car"}</button>` : ""}${settleBtn}<button class="btn sm" data-action="statement" data-v="${id}">Share statement</button></div>
   <div class="card"><div class="detail-grid">
     <div><span>Balance</span><b style="color:${d.balance > 1 ? "var(--bad)" : "var(--good)"}">${d.balance > 1 ? ksh(d.balance) + " owed" : d.balance < -1 ? ksh(-d.balance) + " credit" : "KSh 0"}</b></div>
     <div><span>Days behind</span><b>${d.balance > 1 && d.rate ? d.daysBehind.toFixed(1) : "0"}</b></div>
@@ -947,14 +964,107 @@ function driverDetail(c, id) {
     <div><span>Phone</span><b>${esc(d.phone || "—")}</b></div>
     <div><span>Driving licence</span><b>${fmtDate(d.licenseExpiry)}</b></div>
     <div><span>PSV badge</span><b>${fmtDate(d.psvBadgeExpiry)}</b></div>
-    <div><span>Deposit held</span><b>${d.deposit ? ksh(d.deposit) : "—"}</b></div>
-    <div><span>Total paid</span><b>${ksh(d.payAll)}</b></div>
+    <div><span>Deposit held</span><b>${deposit - depUsed > 0 ? ksh(deposit - depUsed) : "—"}</b></div>
+    ${st && Number(st.writeOff) ? `<div><span>Written off</span><b>${ksh(st.writeOff)}</b></div>` : ""}
+    <div><span>Total paid</span><b>${ksh(totalPaid)}</b>${d.credAll ? `<div class="small muted">incl. ${ksh(d.credAll)} car costs</div>` : ""}</div>
     <div><span>Total due</span><b>${ksh(d.expAll + d.chgAll + (Number(d.openingBalance) || 0))}</b></div>
   </div></div>
+  ${daysPaidCard(c, d)}
   <h3>Payments</h3>${recordList("payments", pays)}
+  ${cred.length ? `<h3>Car costs the driver paid (deducted)</h3>${recordList("expenses", cred)}` : ""}
   <h3>Charges (fines, damage)</h3>${recordList("expenses", chg)}
   <h3>Cars driven</h3><div class="list">${hist.map(a => `<div class="li"><div class="main"><div class="t">${plate(carLabel(a.carId))}</div><div class="small muted">${fmtDate(a.start)} → ${a.end ? fmtDate(a.end) : "now"} · ${ksh(a.rate)}/day</div></div></div>`).join("") || `<div class="empty">Not assigned yet.</div>`}</div>
   </div>`;
+}
+
+// Day-by-day account of what the driver owed and which days their money has covered.
+function driverDays(c, d) {
+  const T = c.T, TS = trackStart();
+  const periods = S.assigns.filter(a => a.driverId === d.id).sort((a, b) => a.start.localeCompare(b.start)).map(a => {
+    const car = carById(a.carId) || {};
+    let st = a.start > TS ? a.start : TS;
+    let en = a.end && a.end < T ? a.end : T;
+    if (car.soldDate && car.soldDate < en) en = car.soldDate;
+    const rate = Number(a.rate) || 0, dm = c.down[a.carId];
+    const p = { a, from: st, to: en, rate, withCar: 0, rest: 0, offRoad: 0, worked: 0, absent: 0, toPay: 0, due: 0, days: [] };
+    for (let day = st; day <= en; day = addDays(day, 1)) {
+      p.withCar++;
+      if (a.restDay !== "" && a.restDay != null && Number(a.restDay) === weekday(day)) { p.rest++; continue; }
+      const dn = dm && dm.get(day);
+      if (dn && dn.excused) { p.offRoad++; continue; }
+      if (dn) p.absent++; else p.worked++;
+      p.toPay++; p.due += rate; p.days.push({ date: day, rate });
+    }
+    return p;
+  }).filter(p => p.withCar > 0);
+  // Money in covers the opening balance and charges first, then the oldest unpaid day.
+  const stl = d.settlement || {};
+  let pool = d.payAll + d.credAll + (Number(stl.depositUsed) || 0) - (Number(stl.refund) || 0) - (Number(d.openingBalance) || 0) - d.chgAll;
+  let woff = Number(stl.writeOff) || 0;
+  const days = periods.flatMap(p => p.days);
+  let paid = 0, written = 0, unpaid = 0, partial = 0, unpaidAmt = 0;
+  for (const x of days) {
+    if (pool >= x.rate - 0.5) { pool -= x.rate; paid++; continue; }
+    if (pool > 0.5) { partial = pool; }
+    let gap = x.rate - Math.max(pool, 0); pool = 0;
+    if (woff >= gap - 0.5) { woff -= gap; written++; continue; }
+    unpaid++; unpaidAmt += gap - Math.max(woff, 0); woff = 0;
+  }
+  return { periods, toPay: days.length, paid, written, unpaid, unpaidAmt, partial, extra: Math.max(pool, 0) };
+}
+function daysPaidCard(c, d) {
+  const r = driverDays(c, d);
+  if (!r.periods.length) return "";
+  const sum = k => r.periods.reduce((t, p) => t + p[k], 0);
+  const first = r.periods[0].from, last = r.periods[r.periods.length - 1].to;
+  const head = r.unpaid ? `<b style="color:var(--bad)">${r.unpaid} day${r.unpaid === 1 ? "" : "s"} unpaid</b> <span class="small muted">(${ksh(r.unpaidAmt)})</span>`
+    : r.written ? `<b>All days settled</b> <span class="small muted">${r.written} written off</span>`
+    : `<b style="color:var(--good)">All days paid</b>${r.extra > 1 ? ` <span class="small muted">plus ${ksh(r.extra)} ahead</span>` : ""}`;
+  return `<div class="card"><div class="section-head" style="margin:0 0 8px"><h3 style="margin:0">Days worked and paid</h3><span class="small muted">${fmtDate(first)} → ${fmtDate(last)}</span></div>
+  <div class="detail-grid">
+    <div><span>Days with a car</span><b>${sum("withCar")}</b></div>
+    <div><span>Rest days</span><b>${sum("rest")}</b></div>
+    <div><span>Off road, not charged</span><b>${sum("offRoad")}</b></div>
+    <div><span>Days worked</span><b>${sum("worked")}</b>${sum("absent") ? `<div class="small muted">+ ${sum("absent")} absent (still charged)</div>` : ""}</div>
+    <div><span>Days to pay for</span><b>${r.toPay}</b></div>
+    <div><span>Days paid</span><b style="color:var(--good)">${r.paid}</b></div>
+    ${r.written ? `<div><span>Days written off</span><b>${r.written}</b></div>` : ""}
+    <div><span>Days unpaid</span><b style="color:${r.unpaid ? "var(--bad)" : "inherit"}">${r.unpaid}</b></div>
+  </div>
+  <div style="margin-top:10px">${head}</div>
+  <p class="small muted" style="margin:4px 0 8px">Payments (and car costs the driver paid) first cover any opening balance and charges (fines, damage), then the oldest unpaid day.</p>
+  <div class="table-wrap"><table><thead><tr><th>Car</th><th>Period</th><th class="r">Rate</th><th class="r">With car</th><th class="r">Rest</th><th class="r">Off road</th><th class="r">Worked</th><th class="r">Absent</th><th class="r">To pay</th><th class="r">Due</th></tr></thead><tbody>
+  ${r.periods.map(p => `<tr><td>${plate(carLabel(p.a.carId))}</td><td>${fmtShort(p.from)} → ${fmtShort(p.to)}</td><td class="r">${ksh(p.rate)}</td><td class="r">${p.withCar}</td><td class="r">${p.rest}</td><td class="r">${p.offRoad}</td><td class="r">${p.worked}</td><td class="r">${p.absent}</td><td class="r">${p.toPay}</td><td class="r">${ksh(p.due)}</td></tr>`).join("")}
+  </tbody></table></div></div>`;
+}
+
+function formSettle(id) {
+  const d = (S.calc.drivers || []).find(x => x.id === id); if (!d) return;
+  const st = d.settlement || {};
+  // balance before any settlement
+  const before = d.balance + (Number(st.depositUsed) || 0) + (Number(st.writeOff) || 0) - (Number(st.refund) || 0);
+  const deposit = Number(d.deposit) || 0;
+  const hist = S.assigns.filter(a => a.driverId === id);
+  const lastEnd = hist.length && hist.every(a => a.end) ? hist.map(a => a.end).sort().pop() : todayStr();
+  const depDefault = st.date ? st.depositUsed : Math.max(0, Math.min(deposit, before));
+  const woDefault = st.date ? st.writeOff : Math.max(0, before - depDefault);
+  const rfDefault = st.date ? st.refund : before < -1 ? Math.round(-before) : 0;
+  openForm(`Settle ${d.name}`, [
+    { id: "leftDate", label: "Left the fleet on", type: "date", value: st.leftDate || lastEnd, half: true },
+    { id: "date", label: "Settled on", type: "date", value: st.date || todayStr(), half: true },
+    { id: "depositUsed", label: "Deposit kept towards the balance (KSh)", type: "number", value: depDefault || "", half: true, hint: deposit ? `Deposit held: ${ksh(deposit)}` : "No deposit recorded" },
+    { id: "writeOff", label: "Write off (KSh)", type: "number", value: woDefault || "", half: true, hint: "What they owe that you won't collect" },
+    { id: "refund", label: "Refunded to the driver (KSh)", type: "number", value: rfDefault || "", half: true, hint: "Credit or deposit you paid back" },
+    { id: "note", label: "Note", type: "textarea", value: st.note || "" }
+  ], async v => {
+    const n = k => Math.max(0, Number(v[k]) || 0);
+    const set = { leftDate: v.leftDate || "", date: v.date || todayStr(), depositUsed: n("depositUsed"), writeOff: n("writeOff"), refund: n("refund"), note: String(v.note || "").slice(0, 300) };
+    if (set.depositUsed > deposit + 0.5) return `They only left a deposit of ${ksh(deposit)}`;
+    const after = before - set.depositUsed - set.writeOff + set.refund;
+    if (Math.abs(after) > 1 && !confirm(`After this they'd still ${after > 0 ? "owe " + ksh(after) : "be " + ksh(-after) + " in credit"}. Save anyway?`)) return false;
+    return save(() => S.db.collection("drivers").doc(id).update({ settlement: set, status: "left", updatedAt: new Date().toISOString() }), "Settlement saved");
+  }, { intro: `Before settling, ${d.name} ${before > 1 ? "owes " + ksh(before) : before < -1 ? "is " + ksh(-before) + " in credit" : "owes nothing"}. The balance after settling should be zero.`,
+       onDelete: st.date ? () => save(() => S.db.collection("drivers").doc(id).update({ settlement: null, updatedAt: new Date().toISOString() }), "Settlement removed") : null, deleteLabel: "Undo settlement" });
 }
 
 function viewMore() {
@@ -1094,6 +1204,9 @@ function statementText(id) {
   if (!pays.length) lines.push("  none");
   pays.forEach(p => lines.push(`  ${fmtShort(p.date)}  ${ksh(p.amount)}${p.ref ? "  (" + p.ref + ")" : ""}`));
   if (chg.length) { lines.push(""); lines.push("Charges:"); chg.forEach(x => lines.push(`  ${fmtShort(x.date)}  ${x.category}  ${ksh(x.amount)}${x.note ? " · " + x.note : ""}`)); }
+  const cr = all("expenses").filter(x => x.driverPaid && !x.chargeDriver && x.driverId === id && x.date >= from);
+  if (cr.length) { lines.push(""); lines.push("Car costs you paid (deducted):"); cr.forEach(x => lines.push(`  ${fmtShort(x.date)}  ${x.category}  ${ksh(x.amount)}${x.note ? " · " + x.note : ""}`)); }
+  if (d.settlement && d.settlement.date) { const st = d.settlement; lines.push(""); lines.push(`Settled ${fmtShort(st.date)}:${Number(st.depositUsed) ? " deposit used " + ksh(st.depositUsed) + ";" : ""}${Number(st.writeOff) ? " written off " + ksh(st.writeOff) + ";" : ""}${Number(st.refund) ? " refunded " + ksh(st.refund) + ";" : ""}`.replace(/;$/, "")); }
   lines.push("");
   lines.push(d.balance > 1 ? `Balance owed: ${ksh(d.balance)} (about ${d.daysBehind.toFixed(1)} days)` : d.balance < -1 ? `You are ${ksh(-d.balance)} in credit. Thank you.` : "You are fully paid up. Thank you.");
   return lines.join("\n");
@@ -1168,12 +1281,14 @@ function formExpense(carId, rec) {
     { id: "date", label: "Date", type: "date", value: rec ? rec.date : todayStr(), half: true, min: trackStart() },
     { id: "odometer", label: "Odometer (km)", type: "number", value: rec ? rec.odometer : "", half: true, hint: "Needed for service reminders" },
     { id: "vendor", label: "Garage / supplier", value: rec ? rec.vendor : "" },
-    { id: "chargeDriver", label: "Charge this to the driver", type: "check", value: rec ? rec.chargeDriver : false, hint: "For fines or damage the driver caused. It's added to what they owe." },
+    { id: "chargeDriver", label: "Charge this to the driver", type: "check", value: rec ? rec.chargeDriver : false, hint: "You paid for fines or damage the driver caused. It's added to what they owe." },
+    { id: "driverPaid", label: "Driver paid this from their own money", type: "check", value: rec ? !!rec.driverPaid : false, hint: "The driver paid for a car cost you normally cover (e.g. a repair, tyre or fuel for your own use). It's deducted from what they owe." },
     { id: "note", label: "Note", type: "textarea", value: rec ? rec.note : "" }
   ], async v => {
     if (!v.carId) return "Choose the car"; if (!(v.amount > 0)) return "Enter the amount";
     if (v.date < trackStart()) return "Date is before your tracking start date";
-    if (v.chargeDriver) { const a = assignOn(v.carId, v.date); if (!a) return "No driver had this car on that date, so it can't be charged"; v.driverId = a.driverId; } else v.driverId = "";
+    if (v.chargeDriver && v.driverPaid) return "Choose one: charge it to the driver, or the driver paid it. Not both.";
+    if (v.chargeDriver || v.driverPaid) { const a = assignOn(v.carId, v.date); if (!a) return v.chargeDriver ? "No driver had this car on that date, so it can't be charged" : "No driver had this car on that date, so it can't be credited to one"; v.driverId = a.driverId; } else v.driverId = "";
     if (v.odometer === "") delete v.odometer;
     return save(() => writeRecord("expenses", v, rec), "Expense saved");
   }, { onDelete: rec ? () => save(() => deleteRecord("expenses", rec), "Expense deleted") : null });
@@ -1913,6 +2028,7 @@ document.addEventListener("click", async e => {
     case "edit-assign": formAssign(null, S.assigns.find(x => x.id === v)); break;
     case "edit-rec": { const k = el.dataset.k, rec = findRec(k, v, el.dataset.m); if (!rec) break; ({ payments: () => formPayment(null, rec), expenses: () => formExpense(null, rec), downtime: () => formDowntime(null, rec), odo: () => formOdo(null, rec) })[k](); break; }
     case "statement": openStatement(v); break;
+    case "settle-driver": formSettle(v); break;
     case "copy-stmt": try { await navigator.clipboard.writeText(document.getElementById("stmt-text").textContent); toast("Statement copied"); } catch (er) { toast("Copy blocked. Select the text and copy it."); } break;
     case "form-delete": if (el.dataset.confirm) { const r = await FORM.onDelete(); if (r !== false) closeSheet(); } else { el.dataset.confirm = "1"; el.textContent = FORM.deleteLabel ? "Tap again to " + FORM.deleteLabel.toLowerCase() : "Tap again to delete"; } break;
     case "imp-reset": if (IMP) { IMP = null; render(); } else { location.hash = "more"; } break;
