@@ -1,0 +1,274 @@
+rules_version = '2';
+
+// Fleet Ledger v2: Firestore security rules
+//
+// Who can do what:
+//   Organisation staff (orgs/{org}/members/{uid}, field role):
+//     admin   - everything, including adding/removing staff
+//     manager - all fleet data, adding owners and drivers, approving owner expenses
+//     clerk   - day-to-day records (payments, expenses, off-road days, mileage); no deletes, no approvals
+//   Fleet access (orgs/{org}/fleets/{fleet}/access/{uid}, field role):
+//     owner        - sees their fleet; can send expenses for approval
+//     owner_viewer - sees their fleet only (e.g. an owner's family member)
+//     driver       - sees only their own statement and driver record
+//   Nobody gets access without an invite code or an admin/manager adding them.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helpers ----------
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function doc(p) { return path('/databases/' + database + '/documents/' + p); }
+
+    // Organisation staff
+    function memberPath(orgId) { return /databases/$(database)/documents/orgs/$(orgId)/members/$(me()); }
+    function isStaff(orgId) { return signedIn() && exists(memberPath(orgId)); }
+    function staffRole(orgId) { return get(memberPath(orgId)).data.role; }
+    function isAdmin(orgId) { return isStaff(orgId) && staffRole(orgId) == 'admin'; }
+    function isManager(orgId) { return isStaff(orgId) && staffRole(orgId) in ['admin', 'manager']; }
+
+    // Fleet access (owners, owner family, drivers)
+    function accessPath(orgId, fleetId) { return /databases/$(database)/documents/orgs/$(orgId)/fleets/$(fleetId)/access/$(me()); }
+    function hasAccess(orgId, fleetId) { return signedIn() && exists(accessPath(orgId, fleetId)); }
+    function accessData(orgId, fleetId) { return get(accessPath(orgId, fleetId)).data; }
+    function isOwnerSide(orgId, fleetId) { return hasAccess(orgId, fleetId) && accessData(orgId, fleetId).role in ['owner', 'owner_viewer']; }
+    function isFleetOwner(orgId, fleetId) { return hasAccess(orgId, fleetId) && accessData(orgId, fleetId).role == 'owner'; }
+    function isDriverFor(orgId, fleetId, driverId) {
+      return hasAccess(orgId, fleetId)
+        && accessData(orgId, fleetId).role == 'driver'
+        && accessData(orgId, fleetId).driverId == driverId;
+    }
+    function canSeeFleet(orgId, fleetId) { return isStaff(orgId) || isOwnerSide(orgId, fleetId); }
+
+    // Small validators
+    function isText(v, max) { return v is string && v.size() <= max; }
+    function isDate(v) { return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function isMoney(v) { return (v is int || v is float) && v >= 0 && v < 100000000; }
+
+    // An invite being redeemed in the same batch: valid, unused, unexpired, matching,
+    // and marked as used by this person when the batch completes.
+    function redeems(code, orgId, fleetId, role) {
+      let inv = get(doc('invites/' + code)).data;
+      let after = getAfter(doc('invites/' + code)).data;
+      return inv.orgId == orgId
+        && inv.fleetId == fleetId
+        && inv.role == role
+        && inv.usedBy == null
+        && request.time < inv.expiresAt
+        && after.usedBy == me();
+    }
+
+    // ---------- Personal profile ----------
+    match /users/{userId} {
+      allow read, write: if signedIn() && userId == me();
+    }
+
+    // ---------- Invite codes ----------
+    // The document ID is the code: long and random, so it can't be guessed.
+    match /invites/{code} {
+      // Anyone signed in may open one invite by its code (to see what it's for), never browse the list.
+      allow get: if signedIn();
+      allow list: if isManager(resource.data.orgId);
+
+      allow create: if code.size() >= 20
+        && request.resource.data.keys().hasOnly(['orgId', 'fleetId', 'role', 'driverId', 'label', 'createdBy', 'createdAt', 'expiresAt', 'usedBy'])
+        && request.resource.data.createdBy == me()
+        && request.resource.data.usedBy == null
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt < request.time + duration.value(15, 'd')
+        && (
+          // Staff invites: admins only, not tied to a fleet
+          (request.resource.data.role in ['manager', 'clerk']
+            && isAdmin(request.resource.data.orgId)
+            && request.resource.data.fleetId == '')
+          ||
+          // Owner / owner family / driver invites: managers, for an existing fleet
+          (request.resource.data.role in ['owner', 'owner_viewer', 'driver']
+            && isManager(request.resource.data.orgId)
+            && exists(doc('orgs/' + request.resource.data.orgId + '/fleets/' + request.resource.data.fleetId))
+            && (request.resource.data.role != 'driver'
+                || exists(doc('orgs/' + request.resource.data.orgId + '/fleets/' + request.resource.data.fleetId + '/drivers/' + request.resource.data.driverId))))
+        );
+
+      // Redeeming: only marks it used, and only alongside creating the matching access/member doc.
+      allow update: if signedIn()
+        && resource.data.usedBy == null
+        && request.time < resource.data.expiresAt
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt'])
+        && request.resource.data.usedBy == me()
+        && request.resource.data.usedAt == request.time
+        && (
+          (resource.data.fleetId == ''
+            && existsAfter(doc('orgs/' + resource.data.orgId + '/members/' + me())))
+          ||
+          (resource.data.fleetId != ''
+            && existsAfter(doc('orgs/' + resource.data.orgId + '/fleets/' + resource.data.fleetId + '/access/' + me())))
+        );
+
+      allow delete: if isManager(resource.data.orgId);
+    }
+
+    // Lets someone find every fleet they've been given access to (collection-group query on uid).
+    match /{path=**}/access/{accessUid} {
+      allow read: if signedIn() && resource.data.uid == me();
+    }
+
+    // ---------- Organisations (a management company, or a family business) ----------
+    match /orgs/{orgId} {
+      allow read: if isStaff(orgId);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'createdBy', 'createdAt'])
+        && request.resource.data.createdBy == me()
+        && request.resource.data.createdAt == request.time
+        && isText(request.resource.data.name, 80) && request.resource.data.name.size() > 0
+        // the founder must make themselves admin in the same batch
+        && existsAfter(doc('orgs/' + orgId + '/members/' + me()));
+      allow update: if isAdmin(orgId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+        && isText(request.resource.data.name, 80);
+      allow delete: if false;
+
+      // ----- Staff -----
+      match /members/{memberId} {
+        allow read: if isStaff(orgId);
+
+        // 1) Founder makes themselves the first admin when creating the org.
+        allow create: if signedIn() && memberId == me()
+          && request.resource.data.keys().hasOnly(['role', 'name', 'addedAt'])
+          && request.resource.data.role == 'admin'
+          && !exists(doc('orgs/' + orgId))
+          && getAfter(doc('orgs/' + orgId)).data.createdBy == me();
+
+        // 2) A new staff member joins with an invite code.
+        allow create: if signedIn() && memberId == me()
+          && request.resource.data.keys().hasOnly(['role', 'name', 'addedAt', 'invite'])
+          && request.resource.data.role in ['manager', 'clerk']
+          && redeems(request.resource.data.invite, orgId, '', request.resource.data.role);
+
+        // 3) Admins change roles or remove staff (but never remove themselves, so the org is never orphaned).
+        allow update: if isAdmin(orgId)
+          && request.resource.data.role in ['admin', 'manager', 'clerk']
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'name']);
+        allow delete: if isAdmin(orgId) && memberId != me();
+      }
+
+      // ----- Fleets (one per owner) -----
+      match /fleets/{fleetId} {
+        allow get: if isStaff(orgId) || hasAccess(orgId, fleetId);
+        allow list: if isStaff(orgId);
+        allow create, update: if isManager(orgId)
+          && isText(request.resource.data.name, 80) && request.resource.data.name.size() > 0;
+        allow delete: if isAdmin(orgId);
+
+        // Who outside the org can see this fleet
+        match /access/{accessUid} {
+          allow read: if isStaff(orgId) || (signedIn() && accessUid == me());
+
+          // Joining with an invite code
+          allow create: if signedIn() && accessUid == me()
+            && request.resource.data.keys().hasOnly(['uid', 'role', 'driverId', 'name', 'invite', 'joinedAt'])
+            && request.resource.data.uid == me()
+            && request.resource.data.joinedAt == request.time
+            && isText(request.resource.data.get('name', ''), 80)
+            && redeems(request.resource.data.invite, orgId, fleetId, request.resource.data.role)
+            && (request.resource.data.role != 'driver'
+                || request.resource.data.driverId == get(doc('invites/' + request.resource.data.invite)).data.driverId);
+
+          // Managers can remove or change access at any time
+          allow update, delete: if isManager(orgId);
+        }
+
+        match /settings/{docId} {
+          allow read: if canSeeFleet(orgId, fleetId);
+          allow write: if isManager(orgId);
+        }
+        match /cars/{carId} {
+          allow read: if canSeeFleet(orgId, fleetId);
+          allow write: if isManager(orgId);
+        }
+        match /drivers/{driverId} {
+          allow read: if canSeeFleet(orgId, fleetId) || isDriverFor(orgId, fleetId, driverId);
+          allow write: if isManager(orgId);
+        }
+        match /assignments/{assignId} {
+          allow read: if canSeeFleet(orgId, fleetId);
+          allow write: if isManager(orgId);
+        }
+
+        // Day-to-day records, partitioned by month: months/2026-11/payments/{id}, etc.
+        match /months/{month}/{kind}/{recId} {
+          allow read: if canSeeFleet(orgId, fleetId)
+            && kind in ['payments', 'expenses', 'downtime', 'odo'];
+          allow create, update: if isStaff(orgId)
+            && kind in ['payments', 'expenses', 'downtime', 'odo']
+            && month.matches('^[0-9]{4}-[0-9]{2}$')
+            && request.resource.data.updatedBy == me()
+            && (!('amount' in request.resource.data) || isMoney(request.resource.data.amount));
+          allow delete: if isManager(orgId)
+            && kind in ['payments', 'expenses', 'downtime', 'odo'];
+        }
+
+        // Who opened the app when (one document per person per day)
+        match /months/{month}/visits/{visitId} {
+          allow read: if isStaff(orgId);
+          allow create, update: if isStaff(orgId)
+            && request.resource.data.uid == me()
+            && visitId.matches(me() + '_[0-9]{4}-[0-9]{2}-[0-9]{2}');
+          allow delete: if false;
+        }
+
+        // Who-did-what log: staff append only, nobody edits history.
+        match /months/{month}/activity/{actId} {
+          allow read: if isStaff(orgId);
+          allow create: if isStaff(orgId) && request.resource.data.uid == me();
+          allow update, delete: if false;
+        }
+
+        // Expenses owners send for approval
+        match /submissions/{subId} {
+          allow read: if isStaff(orgId) || isOwnerSide(orgId, fleetId);
+
+          allow create: if isFleetOwner(orgId, fleetId)
+            && request.resource.data.keys().hasOnly(['carId', 'category', 'amount', 'date', 'odometer', 'vendor', 'ref', 'chargeDriver', 'note', 'status', 'submittedAt', 'by'])
+            && request.resource.data.status == 'pending'
+            && request.resource.data.by == me()
+            && request.resource.data.submittedAt == request.time
+            && isMoney(request.resource.data.amount) && request.resource.data.amount > 0
+            && isDate(request.resource.data.date)
+            && isText(request.resource.data.category, 40)
+            && request.resource.data.carId is string
+            && exists(doc('orgs/' + orgId + '/fleets/' + fleetId + '/cars/' + request.resource.data.carId))
+            && isText(request.resource.data.get('note', ''), 500)
+            && isText(request.resource.data.get('vendor', ''), 120)
+            && isText(request.resource.data.get('ref', ''), 40);
+
+          // Approve or decline: managers only, once, touching only the decision fields.
+          allow update: if isManager(orgId)
+            && resource.data.status == 'pending'
+            && request.resource.data.status in ['approved', 'rejected']
+            && request.resource.data.decidedBy == me()
+            && request.resource.data.decidedAt == request.time
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['status', 'approvedAmount', 'managerNote', 'decidedAt', 'decidedBy', 'expenseId'])
+            && isText(request.resource.data.get('managerNote', ''), 500);
+
+          // An owner can withdraw their own expense while it's still waiting.
+          allow delete: if isFleetOwner(orgId, fleetId)
+            && resource.data.status == 'pending'
+            && resource.data.by == me();
+        }
+
+        // Driver statements: one per driver, written by staff (later by a Cloud Function).
+        match /statements/{driverId} {
+          allow read: if canSeeFleet(orgId, fleetId) || isDriverFor(orgId, fleetId, driverId);
+          allow write: if isStaff(orgId);
+        }
+      }
+    }
+
+    // Everything not matched above is closed by default.
+  }
+}

@@ -1,0 +1,2106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fleet Ledger</title>
+<meta name="theme-color" content="#0f5b66">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: phone-first operations ledger. Summary strip -> attention list -> tables. Bottom tab bar, sheets for data entry. Plates styled as Kenyan rear plates. */
+:root {
+  color-scheme: light;
+  --bg: #f2f4f3;
+  --surface: #ffffff;
+  --ink: #14201e;
+  --muted: #5b6866;
+  --line: #dde3e1;
+  --accent: #0f5b66;
+  --accent-ink: #ffffff;
+  --accent-soft: #e2eff0;
+  --plate: #f5c518;
+  --plate-ink: #111111;
+  --good: #1d7a3e;
+  --good-soft: #e3f3e8;
+  --warn: #9a6200;
+  --warn-soft: #fbf0d9;
+  --bad: #b3261e;
+  --bad-soft: #fbe6e4;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0f1514; --surface: #182120; --ink: #e8efed; --muted: #9fb0ad; --line: #2b3735;
+    --accent: #4fb3bf; --accent-ink: #06201f; --accent-soft: #1c3335;
+    --good: #5cc282; --good-soft: #17301f; --warn: #e3ad4a; --warn-soft: #33280f; --bad: #f07b72; --bad-soft: #3a1b18;
+    --series-1: #3987e5; --series-2: #d95926;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1514; --surface: #182120; --ink: #e8efed; --muted: #9fb0ad; --line: #2b3735;
+  --accent: #4fb3bf; --accent-ink: #06201f; --accent-soft: #1c3335;
+  --good: #5cc282; --good-soft: #17301f; --warn: #e3ad4a; --warn-soft: #33280f; --bad: #f07b72; --bad-soft: #3a1b18;
+  --series-1: #3987e5; --series-2: #d95926;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.45 var(--font-body); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: 20px; font-weight: 800; }
+h2 { font-size: 17px; font-weight: 700; }
+h3 { font-size: 15px; font-weight: 700; }
+.num { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+.app { max-width: 1100px; margin: 0 auto; padding: env(safe-area-inset-top, 0px) 16px 96px; }
+header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 12px; }
+header.top .brand { display: flex; flex-direction: column; }
+header.top .brand span { font-size: 12px; color: var(--muted); }
+.banner { padding: 10px 12px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); border: 1px solid var(--line); margin-bottom: 12px; font-size: 14px; }
+
+nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center; z-index: 20; padding-bottom: env(safe-area-inset-bottom); }
+nav.tabs .inner { display: grid; grid-template-columns: repeat(6, 1fr); width: 100%; max-width: 640px; }
+nav.tabs a { text-decoration: none; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px 10px; font-size: 12px; font-weight: 500; }
+nav.tabs a svg { width: 22px; height: 22px; }
+nav.tabs a.on { color: var(--accent); }
+
+.section { margin: 16px 0; display: flex; flex-direction: column; gap: 10px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
+.grid { display: grid; gap: 10px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.kpi .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.kpi .value { font-family: var(--font-display); font-size: 24px; font-weight: 700; margin-top: 2px; }
+.kpi .sub { font-size: 13px; color: var(--muted); }
+.meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.meter > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+.seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 999px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--muted); }
+.seg button.on { background: var(--accent); color: var(--accent-ink); }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); padding: 8px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 14px; text-decoration: none; color: var(--ink); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.danger { color: var(--bad); }
+.btn.sm { padding: 5px 10px; font-size: 13px; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.plate { display: inline-block; font-family: var(--font-mono); font-weight: 600; font-size: 13px; background: var(--plate); color: var(--plate-ink); padding: 1px 7px; border-radius: 4px; border: 1.5px solid #222; letter-spacing: 0.04em; white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.neutral { background: var(--accent-soft); color: var(--accent); }
+
+.alerts { display: flex; flex-direction: column; gap: 6px; }
+.alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); }
+.alert.bad { border-left-color: var(--bad); }
+.alert .what { font-weight: 600; }
+.alert .why { font-size: 13px; color: var(--muted); }
+
+.table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; background: var(--surface); }
+td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--accent-soft); }
+
+.list { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border-bottom: 1px solid var(--line); }
+.li:last-child { border-bottom: 0; }
+.li .main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.li .main .t { font-weight: 600; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.li .end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+
+.empty { padding: 24px 16px; text-align: center; color: var(--muted); }
+.steps { display: grid; gap: 10px; }
+.step { display: flex; gap: 12px; align-items: flex-start; }
+.step b.n { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 13px; }
+
+.fab { position: fixed; right: max(16px, calc(50% - 534px)); bottom: 78px; z-index: 21; width: 56px; height: 56px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); font-size: 28px; line-height: 1; cursor: pointer; box-shadow: 0 6px 18px rgba(0,0,0,0.22); }
+
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-size: 11px; font-family: var(--font-body); }
+.legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--bg); padding: 6px 9px; border-radius: 6px; font-size: 12px; z-index: 50; display: none; white-space: nowrap; }
+
+/* Insights */
+.hbars { display: flex; flex-direction: column; }
+.hb { display: grid; grid-template-columns: minmax(96px, 1.2fr) 2fr minmax(78px, auto); gap: 10px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.hb:last-child { border-bottom: 0; }
+.hb-l { font-size: 14px; min-width: 0; overflow-wrap: anywhere; }
+.hb-t { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; }
+.hb-t i { display: block; height: 100%; border-radius: 5px; }
+.hb-v { text-align: right; font-size: 14px; font-weight: 600; white-space: nowrap; }
+.findings { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+.findings li::marker { color: var(--accent); }
+.cols { display: flex; align-items: flex-end; gap: 3px; height: 90px; padding-top: 6px; }
+.cols i { flex: 1; background: var(--series-1); border-radius: 3px 3px 0 0; min-height: 2px; }
+.cols i.z { background: var(--line); }
+.feed .li .main .t { font-weight: 500; }
+@media (max-width: 420px) { .hb { grid-template-columns: 1fr 74px; } .hb-t { grid-column: 1 / -1; grid-row: 2; } }
+
+/* Sheet */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.42); z-index: 40; display: none; }
+.scrim.open { display: block; }
+.sheet { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); width: 100%; max-width: 560px; max-height: 92%; overflow-y: auto; background: var(--surface); border-radius: 16px 16px 0 0; z-index: 41; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); display: none; }
+.sheet.open { display: block; }
+.sheet .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px; }
+.sheet .x { border: 0; background: transparent; font-size: 22px; cursor: pointer; color: var(--muted); padding: 4px 8px; }
+form.f { display: grid; gap: 12px; }
+form.f .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+label.fl { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+label.fl input, label.fl select, label.fl textarea { font-weight: 400; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; font-size: 15px; width: 100%; }
+label.ck { display: flex; gap: 8px; align-items: center; font-size: 14px; }
+.hint { font-size: 12px; color: var(--muted); font-weight: 400; }
+.err { color: var(--bad); font-size: 13px; }
+pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--line); padding: 12px; border-radius: 8px; font-family: var(--font-mono); font-size: 12.5px; margin: 0; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 90px; background: var(--ink); color: var(--bg); padding: 9px 14px; border-radius: 8px; z-index: 60; font-size: 14px; display: none; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.detail-grid > div > span:first-child { display: block; font-size: 12px; color: var(--muted); }
+.detail-grid div b { font-variant-numeric: tabular-nums; }
+@media (max-width: 420px) { form.f .two { grid-template-columns: 1fr; } .kpi .value { font-size: 21px; } }
+@media (prefers-reduced-motion: no-preference) { .sheet.open { animation: up .18s ease-out; } @keyframes up { from { transform: translate(-50%, 24px); opacity: .6; } to { transform: translate(-50%, 0); opacity: 1; } } }
+.fleetbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 12px; }
+.fleetbar:empty { display: none; }
+.fleetbar .who { font-size: 13px; color: var(--muted); }
+.count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--bad); color: #fff; font-size: 12px; font-weight: 700; margin-left: 4px; }
+.code { font-family: var(--font-mono); font-size: 13px; word-break: break-all; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; display: block; }
+.ownrow { cursor: pointer; }
+.ownrow .figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 12px; margin-top: 8px; }
+.ownrow .figs span { display: block; font-size: 12px; color: var(--muted); }
+.ownrow .figs b { font-variant-numeric: tabular-nums; }
+.people { display: grid; gap: 6px; margin-top: 6px; }
+.people button { text-align: left; }
+.auth { max-width: 420px; margin: 24px auto; }
+.auth .or { text-align: center; color: var(--muted); font-size: 13px; margin: 12px 0; }
+.big-num { font-family: var(--font-display, inherit); font-size: 34px; font-weight: 800; font-variant-numeric: tabular-nums; margin: 4px 0; }
+.member { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.member:last-child { border-bottom: 0; }
+.member select { width: auto; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand"><h1 id="biz-name">Fleet Ledger</h1><span id="today-label"></span></div>
+    <div class="row-actions" style="align-items:center"><div id="sync" class="small muted">Connecting…</div><button id="acct" class="btn sm" data-action="account" hidden>Account</button></div>
+  </header>
+  <div id="fleetbar" class="fleetbar"></div>
+  <div id="banner"></div>
+  <main id="view"><div class="empty">Loading fleet data…</div></main>
+</div>
+
+<button class="fab" id="fab" aria-label="Add a record" data-action="quick-add">+</button>
+
+<nav class="tabs" aria-label="Sections"><div class="inner">
+  <a href="#home" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l9-8 9 8M5 10v10h14V10"/></svg>Home</a>
+  <a href="#collect" data-tab="collect"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>Collect</a>
+  <a href="#cars" data-tab="cars"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16V11l2-5h10l2 5v5M3 16h18M7 19v-3M17 19v-3"/><circle cx="7.5" cy="13" r="1"/><circle cx="16.5" cy="13" r="1"/></svg>Cars</a>
+  <a href="#drivers" data-tab="drivers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>Drivers</a>
+  <a href="#insights" data-tab="insights"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Insights</a>
+  <a href="#more" data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>Records</a>
+</div></nav>
+
+<div class="scrim" id="scrim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title"></div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+"use strict";
+/* ============ Constants ============ */
+const TZ = "Africa/Nairobi";
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const EXPENSE_CATS = ["Service", "Repairs & parts", "Tyres", "Insurance", "Inspection & licences", "Tracker", "Platform fees", "Fines & penalties", "Accident damage", "Car wash & other"];
+const DOWN_REASONS = [
+  { v: "Service / repair", excused: true },
+  { v: "Accident", excused: true },
+  { v: "No driver assigned", excused: true },
+  { v: "Platform suspension", excused: true },
+  { v: "Driver absent", excused: false },
+  { v: "Other", excused: true }
+];
+const METHODS = ["M-Pesa Till", "M-Pesa Paybill", "M-Pesa (personal)", "Cash", "Bank"];
+const DEFAULT_SETTINGS = { name: "Fleet Ledger", trackStart: "", warnDays: 30, arrearsDays: 2, serviceWarnKm: 500, serviceIntervalKm: 5000 };
+
+/* ============ Date & format helpers ============ */
+const todayStr = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const toUTC = s => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+const fromUTC = t => new Date(t).toISOString().slice(0, 10);
+const addDays = (s, n) => fromUTC(toUTC(s) + n * 86400000);
+const dayDiff = (a, b) => Math.round((toUTC(b) - toUTC(a)) / 86400000);
+const weekday = s => new Date(toUTC(s)).getUTCDay();
+const monthOf = s => s.slice(0, 7);
+const monthStart = m => m + "-01";
+const monthEnd = m => { const [y, mo] = m.split("-").map(Number); return fromUTC(Date.UTC(y, mo, 0)); };
+const addMonths = (m, n) => { const [y, mo] = m.split("-").map(Number); const d = new Date(Date.UTC(y, mo - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+function monthsBetween(a, b) { const out = []; let m = a; while (m <= b) { out.push(m); m = addMonths(m, 1); } return out; }
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const fmtMonth = m => MONTHS_SHORT[Number(m.slice(5, 7)) - 1] + " " + m.slice(0, 4);
+const fmtDate = s => s ? Number(s.slice(8, 10)) + " " + MONTHS_SHORT[Number(s.slice(5, 7)) - 1] + " " + s.slice(0, 4) : "—";
+const fmtShort = s => s ? Number(s.slice(8, 10)) + " " + MONTHS_SHORT[Number(s.slice(5, 7)) - 1] : "—";
+const ksh = n => (n < 0 ? "−" : "") + "KSh " + Math.round(Math.abs(n || 0)).toLocaleString("en-KE");
+const kshShort = n => { const a = Math.abs(n); const s = a >= 1e6 ? (a / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M" : a >= 1e3 ? Math.round(a / 1e3) + "k" : Math.round(a) + ""; return (n < 0 ? "−" : "") + s; };
+const pct = x => isFinite(x) ? Math.round(x * 100) + "%" : "—";
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const normPlate = s => String(s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+const digits = s => String(s || "").replace(/\D/g, "");
+const phoneKey = s => { const d = digits(s); return d.length >= 9 ? d.slice(-9) : ""; };
+const num = v => { const n = Number(String(v ?? "").replace(/[^0-9.\-]/g, "")); return isFinite(n) ? n : 0; };
+
+/* ============ State ============ */
+const S = {
+  db: null, raw: null, user: null, canWrite: true,
+  role: null, fleet: null, fleets: [], fleetsReady: false, subsBy: {}, subWatch: {}, mySubs: [], ownerState: "loading", fleetMeta: null,
+  mode: "loading", org: null, orgName: "", orgs: [], staffRole: null, canManage: false, isAdmin: false, accessRole: null, myAccess: [],
+  members: [], names: {}, top: [], accessBy: {}, accWatch: {}, driverId: null, stmt: null, stmtReady: false, join: null, me: {},
+  cars: [], drivers: [], assigns: [], settings: { ...DEFAULT_SETTINGS },
+  months: {},          // "YYYY-MM" -> {payments:[], expenses:[], downtime:[], odo:[]}
+  loadedMonths: new Set(), subs: [], coreReady: { cars: false, drivers: false, assigns: false, settings: false },
+  period: "month", view: "home", detail: null, calc: null, uid: null, act: {}, vis: {}, actLoaded: false, insTab: "business"
+};
+const KINDS = ["payments", "expenses", "downtime", "odo"];
+const all = kind => Object.values(S.months).flatMap(m => m[kind] || []);
+const carById = id => S.cars.find(c => c.id === id);
+const driverById = id => S.drivers.find(d => d.id === id);
+const carLabel = id => { const c = carById(id); return c ? c.plate : "Unknown car"; };
+const driverName = id => { const d = driverById(id); return d ? d.name : "Unknown driver"; };
+function trackStart() { return S.settings.trackStart || monthStart(monthOf(todayStr())); }
+
+function assignOn(carId, date) {
+  return S.assigns.find(a => a.carId === carId && a.start <= date && (!a.end || a.end >= date));
+}
+function driverAssignOn(driverId, date) {
+  return S.assigns.find(a => a.driverId === driverId && a.start <= date && (!a.end || a.end >= date));
+}
+function currentAssignForDriver(id) { return driverAssignOn(id, todayStr()); }
+function currentAssignForCar(id) { return assignOn(id, todayStr()); }
+
+/* ============ Calculation engine ============ */
+function periodRange(p) {
+  const T = todayStr(), m = monthOf(T), ts = trackStart();
+  if (p === "month") return { from: monthStart(m), to: T, label: fmtMonth(m) + " to date" };
+  if (p === "last") { const lm = addMonths(m, -1); return { from: monthStart(lm), to: monthEnd(lm), label: fmtMonth(lm) }; }
+  if (p === "ytd") return { from: T.slice(0, 4) + "-01-01", to: T, label: "Year to date" };
+  return { from: ts, to: T, label: "Since " + fmtDate(ts) };
+}
+
+function compute() {
+  const T = todayStr(), TS = trackStart();
+  const P = periodRange(S.period);
+  const from = P.from < TS ? TS : P.from, to = P.to;
+  const inP = d => d >= from && d <= to;
+
+  // downtime map: carId -> Map(date -> {excused, reason})
+  const down = {};
+  for (const x of all("downtime")) {
+    if (!x.carId || !x.from) continue;
+    const end = x.to && x.to < T ? x.to : (x.to || T) > T ? T : (x.to || T);
+    const m = down[x.carId] || (down[x.carId] = new Map());
+    for (let d = x.from; d <= end; d = addDays(d, 1)) {
+      const prev = m.get(d);
+      // an unexcused entry wins only if no excused entry covers the day
+      if (!prev || (!prev.excused && x.excused !== false)) m.set(d, { excused: x.excused !== false, reason: x.reason });
+    }
+  }
+
+  const ds = {}, cs = {}, fleetM = {};
+  const dInit = id => ds[id] || (ds[id] = { expAll: 0, expP: 0, payAll: 0, payP: 0, chgAll: 0, chgP: 0, lastPay: null });
+  const cInit = id => cs[id] || (cs[id] = { expP: 0, revP: 0, revAll: 0, costP: 0, costAll: 0, earnP: 0, denomP: 0, downP: 0, idleP: 0, kmP: 0, revM: {}, costM: {} });
+  const fInit = m => fleetM[m] || (fleetM[m] = { rev: 0, cost: 0, exp: 0 });
+  S.drivers.forEach(d => dInit(d.id));
+  S.cars.forEach(c => cInit(c.id));
+
+  // Day loop per car
+  for (const c of S.cars) {
+    const st = c.inServiceDate && c.inServiceDate > TS ? c.inServiceDate : TS;
+    const en = c.soldDate && c.soldDate < T ? c.soldDate : T;
+    const cst = cs[c.id], dm = down[c.id];
+    for (let d = st; d <= en; d = addDays(d, 1)) {
+      const a = assignOn(c.id, d);
+      if (a && a.restDay !== "" && a.restDay != null && Number(a.restDay) === weekday(d)) continue;
+      const dn = dm && dm.get(d);
+      const p = inP(d);
+      if (p) { cst.denomP++; if (dn) cst.downP++; else if (!a) cst.idleP++; }
+      if (a) {
+        const rate = Number(a.rate) || 0;
+        if (!(dn && dn.excused)) {
+          const dst = dInit(a.driverId);
+          dst.expAll += rate;
+          fInit(monthOf(d)).exp += rate;
+          if (p) { dst.expP += rate; cst.expP += rate; }
+        }
+        if (!dn && p) cst.earnP++;
+      }
+    }
+  }
+  for (const x of all("payments")) {
+    if (x.date < TS) continue;
+    const amt = Number(x.amount) || 0, dst = dInit(x.driverId);
+    dst.payAll += amt;
+    if (!dst.lastPay || x.date > dst.lastPay) dst.lastPay = x.date;
+    if (inP(x.date)) dst.payP += amt;
+    fInit(monthOf(x.date)).rev += amt;
+    if (x.carId) { const c = cInit(x.carId); c.revAll += amt; c.revM[monthOf(x.date)] = (c.revM[monthOf(x.date)] || 0) + amt; if (inP(x.date)) c.revP += amt; }
+  }
+  for (const x of all("expenses")) {
+    if (x.date < TS) continue;
+    const amt = Number(x.amount) || 0;
+    fInit(monthOf(x.date)).cost += amt;
+    if (x.carId) { const c = cInit(x.carId); c.costAll += amt; c.costM[monthOf(x.date)] = (c.costM[monthOf(x.date)] || 0) + amt; if (inP(x.date)) c.costP += amt; }
+    if (x.chargeDriver && x.driverId) { const dst = dInit(x.driverId); dst.chgAll += amt; if (inP(x.date)) dst.chgP += amt; }
+  }
+  // Odometer
+  const odoBy = {};
+  for (const x of all("odo")) (odoBy[x.carId] || (odoBy[x.carId] = [])).push({ date: x.date, km: Number(x.km) || 0 });
+  for (const x of all("expenses")) if (x.odometer && x.carId) (odoBy[x.carId] || (odoBy[x.carId] = [])).push({ date: x.date, km: Number(x.odometer) || 0 });
+  const odoInfo = {};
+  for (const c of S.cars) {
+    const r = (odoBy[c.id] || []).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.km - b.km);
+    const last = r[r.length - 1];
+    const before = r.filter(x => x.date < from).pop();
+    const inside = r.filter(x => inP(x.date));
+    let kmP = 0;
+    if (inside.length) { const base = before ? before.km : inside[0].km; kmP = Math.max(0, inside[inside.length - 1].km - base); }
+    cs[c.id].kmP = kmP;
+    const svc = all("expenses").filter(x => x.carId === c.id && x.category === "Service" && x.odometer).map(x => Number(x.odometer));
+    const lastService = Math.max(Number(c.lastServiceKm) || 0, ...svc, 0);
+    odoInfo[c.id] = { lastKm: last ? last.km : null, lastDate: last ? last.date : null, lastService };
+  }
+
+  // Driver balances
+  const drivers = S.drivers.map(d => {
+    const s = ds[d.id], a = currentAssignForDriver(d.id);
+    const balance = (Number(d.openingBalance) || 0) + s.expAll + s.chgAll - s.payAll;
+    const rate = a ? Number(a.rate) || 0 : 0;
+    const daysBehind = rate ? balance / rate : 0;
+    let status = "good", statusLabel = "Up to date";
+    if (balance < -1) { status = "good"; statusLabel = "In credit"; }
+    else if (balance > 1) { if (daysBehind > Number(S.settings.arrearsDays || 2)) { status = "bad"; statusLabel = "In arrears"; } else { status = "warn"; statusLabel = "Slightly behind"; } }
+    return { ...d, ...s, balance, rate, daysBehind, assign: a, status, statusLabel, collRateP: s.expP + s.chgP ? s.payP / (s.expP + s.chgP) : NaN };
+  });
+
+  // Car rows
+  const cars = S.cars.map(c => {
+    const s = cs[c.id], a = currentAssignForCar(c.id), o = odoInfo[c.id];
+    const net = s.revP - s.costP, netAll = s.revAll - s.costAll;
+    const price = Number(c.purchasePrice) || 0;
+    const recentMs = [1, 2, 3].map(i => addMonths(monthOf(T), -i));
+    const avgNet = recentMs.reduce((t, m) => t + (s.revM[m] || 0) - (s.costM[m] || 0), 0) / 3;
+    const remain = price - netAll;
+    const today = down[c.id] && down[c.id].get(T);
+    let status = "good", statusLabel = "On the road";
+    if (c.soldDate && c.soldDate <= T) { status = "neutral"; statusLabel = "Sold"; }
+    else if (today) { status = "bad"; statusLabel = "Off road · " + today.reason; }
+    else if (!a) { status = "warn"; statusLabel = "No driver"; }
+    else if (a.restDay !== "" && a.restDay != null && Number(a.restDay) === weekday(T)) { status = "neutral"; statusLabel = "Rest day"; }
+    return {
+      ...c, ...s, assign: a, driver: a ? driverById(a.driverId) : null, net, netAll, price,
+      util: s.denomP ? s.earnP / s.denomP : NaN, collRate: s.expP ? s.revP / s.expP : NaN,
+      payback: price ? netAll / price : NaN, monthsLeft: price && remain > 0 && avgNet > 0 ? remain / avgNet : (price && remain <= 0 ? 0 : NaN),
+      costPerKm: s.kmP ? s.costP / s.kmP : NaN, odo: o, status, statusLabel, downToday: today
+    };
+  });
+
+  // Today
+  const todayRows = [];
+  for (const a of S.assigns.filter(a => a.start <= T && (!a.end || a.end >= T))) {
+    const car = carById(a.carId); if (!car) continue;
+    const isRest = a.restDay !== "" && a.restDay != null && Number(a.restDay) === weekday(T);
+    const dn = down[a.carId] && down[a.carId].get(T);
+    const due = isRest || (dn && dn.excused) ? 0 : Number(a.rate) || 0;
+    const paid = all("payments").filter(p => p.driverId === a.driverId && p.date === T).reduce((t, p) => t + (Number(p.amount) || 0), 0);
+    todayRows.push({ a, car, driver: driverById(a.driverId), due, paid, isRest, dn });
+  }
+
+  // Fleet totals for period
+  const tot = cars.reduce((t, c) => { t.rev += c.revP; t.cost += c.costP; t.exp += c.expP; t.earn += c.earnP; t.denom += c.denomP; return t; }, { rev: 0, cost: 0, exp: 0, earn: 0, denom: 0 });
+  // payments with no car still count as revenue
+  const unassignedRev = all("payments").filter(p => !p.carId && inP(p.date) && p.date >= TS).reduce((t, p) => t + (Number(p.amount) || 0), 0);
+  tot.rev += unassignedRev;
+  tot.net = tot.rev - tot.cost;
+  tot.arrears = drivers.filter(d => d.balance > 0).reduce((t, d) => t + d.balance, 0);
+  tot.charges = drivers.reduce((t, d) => t + d.chgP, 0);
+
+  // Alerts
+  const alerts = [];
+  const W = Number(S.settings.warnDays) || 30;
+  const docCheck = (date, what, who, link) => {
+    if (!date) return;
+    const left = dayDiff(T, date);
+    if (left < 0) alerts.push({ sev: "bad", what: `${what} expired`, why: `${who} · expired ${fmtDate(date)}`, link, sort: left });
+    else if (left <= W) alerts.push({ sev: left <= 7 ? "bad" : "warn", what: `${what} due in ${left} day${left === 1 ? "" : "s"}`, why: `${who} · ${fmtDate(date)}`, link, sort: left });
+  };
+  for (const c of cars) {
+    if (c.soldDate && c.soldDate <= T) continue;
+    docCheck(c.insuranceExpiry, "Insurance", c.plate, "car:" + c.id);
+    docCheck(c.inspectionExpiry, "NTSA inspection", c.plate, "car:" + c.id);
+    docCheck(c.tncExpiry, "PSV / platform licence", c.plate, "car:" + c.id);
+    docCheck(c.trackerExpiry, "Tracker subscription", c.plate, "car:" + c.id);
+    const iv = Number(c.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000;
+    if (c.odo.lastKm != null && c.odo.lastService) {
+      const since = c.odo.lastKm - c.odo.lastService, left = iv - since;
+      if (left <= (Number(S.settings.serviceWarnKm) || 500)) alerts.push({ sev: left < 0 ? "bad" : "warn", what: left < 0 ? `Service overdue by ${Math.abs(left).toLocaleString()} km` : `Service due in ${left.toLocaleString()} km`, why: `${c.plate} · ${c.odo.lastKm.toLocaleString()} km now, last service at ${c.odo.lastService.toLocaleString()} km`, link: "car:" + c.id, sort: left / 100 });
+    }
+    if (c.assign && (!c.odo.lastDate || dayDiff(c.odo.lastDate, T) > 8)) alerts.push({ sev: "warn", what: "Mileage not recorded this week", why: `${c.plate} · last reading ${c.odo.lastDate ? fmtDate(c.odo.lastDate) : "never"}`, link: "car:" + c.id, sort: 50 });
+    if (!c.assign && !c.downToday) alerts.push({ sev: "warn", what: "Car has no driver", why: `${c.plate} is earning nothing`, link: "car:" + c.id, sort: 5 });
+  }
+  for (const d of drivers) {
+    if (d.status === "bad") alerts.push({ sev: "bad", what: `${d.name} owes ${ksh(d.balance)}`, why: `About ${d.daysBehind.toFixed(1)} days of payments behind`, link: "driver:" + d.id, sort: -d.daysBehind });
+    docCheck(d.licenseExpiry, "Driving licence", d.name, "driver:" + d.id);
+    docCheck(d.psvBadgeExpiry, "PSV badge", d.name, "driver:" + d.id);
+  }
+  alerts.sort((a, b) => (a.sev === b.sev ? 0 : a.sev === "bad" ? -1 : 1) || a.sort - b.sort);
+
+  // Trend: last 6 months
+  const curM = monthOf(T);
+  const trend = monthsBetween(addMonths(curM, -5), curM).filter(m => m >= monthOf(TS)).map(m => ({ m, ...(fleetM[m] || { rev: 0, cost: 0, exp: 0 }) }));
+
+  return { T, P: { ...P, from }, drivers, cars, todayRows, tot, alerts, trend, down, fleetM };
+}
+
+/* ============ Data layer ============ */
+function monthBucket(m) { return S.months[m] || (S.months[m] = { payments: [], expenses: [], downtime: [], odo: [] }); }
+const snapRows = snap => snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+/* ============ Start-up (the Firebase module calls startApp once someone is signed in) ============ */
+const fleetBase = (fid = S.fleet) => `orgs/${S.org}/fleets/${fid}`;
+const ROLE_LABEL = { admin: "Admin", manager: "Manager", clerk: "Data entry", owner: "Owner", owner_viewer: "Owner's family (view only)", driver: "Driver" };
+const canSubmit = () => S.mode === "owner" && S.accessRole === "owner";
+const errText = e => {
+  const c = e && e.code || "";
+  if (c === "permission-denied") return "your role isn't allowed to do that";
+  if (c === "unavailable") return "you seem to be offline";
+  return c || "unexpected error";
+};
+
+window.startApp = async function (ctx) {
+  S.raw = ctx.db; S.uid = ctx.uid; S.me = { name: ctx.name || "", email: ctx.email || "" }; S.signOut = ctx.signOut;
+  // Inside a fleet, the app reads and writes through this wrapper: orgs/<org>/fleets/<fleet>/…
+  S.db = { collection: p => S.raw.collection(`${fleetBase()}/${p}`), doc: p => S.raw.doc(`${fleetBase()}/${p}`) };
+  document.getElementById("today-label").textContent = fmtDate(todayStr());
+  document.getElementById("acct").hidden = false;
+  const join = new URLSearchParams(location.search).get("join");
+  if (join) return showJoin(join.trim());
+  return findHome();
+};
+
+function stopAll() {
+  resetFleetState();
+  for (const u of S.top) { try { u(); } catch (e) {} }
+  for (const u of Object.values(S.subWatch)) { try { u(); } catch (e) {} }
+  for (const u of Object.values(S.accWatch)) { try { u(); } catch (e) {} }
+  S.top = []; S.subWatch = {}; S.accWatch = {}; S.subsBy = {}; S.accessBy = {};
+  S.fleet = null; S.fleetMeta = null; S.fleets = []; S.fleetsReady = false; S.mySubs = []; S.stmt = null; S.stmtReady = false;
+}
+
+async function findHome() {
+  S.mode = "loading"; setSync("Loading…"); render();
+  let orgIds = [];
+  try { const p = await S.raw.doc(`users/${S.uid}`).get(); orgIds = p.exists ? (p.data().orgs || []) : []; if (p.exists && p.data().name && !S.me.name) S.me.name = p.data().name; } catch (e) {}
+  const staffOf = [];
+  for (const o of orgIds) {
+    try {
+      const m = await S.raw.doc(`orgs/${o}/members/${S.uid}`).get();
+      if (!m.exists) continue;
+      const org = await S.raw.doc(`orgs/${o}`).get();
+      staffOf.push({ id: o, role: m.data().role, name: org.exists ? org.data().name : "Organisation" });
+    } catch (e) {}
+  }
+  S.orgs = staffOf;
+  let acc = [];
+  try {
+    const q = await S.raw.group("access").where("uid", "==", S.uid).get();
+    acc = q.docs.map(d => { const seg = d.path.split("/"); return { org: seg[1], fleet: seg[3], ...d.data() }; });
+  } catch (e) {}
+  S.myAccess = acc;
+  if (staffOf.length) {
+    let saved = null; try { saved = localStorage.getItem("org"); } catch (e) {}
+    return startStaff(staffOf.find(x => x.id === saved) || staffOf[0]);
+  }
+  if (acc.length) {
+    let saved = null; try { saved = localStorage.getItem("access"); } catch (e) {}
+    return startAccess(acc.find(x => `${x.org}/${x.fleet}` === saved) || acc[0]);
+  }
+  S.mode = "welcome"; setSync(""); render();
+}
+
+function resetFleetState() {
+  for (const u of S.subs) { try { u(); } catch (e) {} }
+  S.subs = []; S.cars = []; S.drivers = []; S.assigns = []; S.settings = { ...DEFAULT_SETTINGS };
+  S.months = {}; S.loadedMonths = new Set(); S.coreReady = { cars: false, drivers: false, assigns: false, settings: false };
+  S.act = {}; S.vis = {}; S.actLoaded = false; S.detail = null; S.calc = null; S._sumKey = null;
+}
+
+function loadFleet() {
+  const timer = setTimeout(() => setSync("Can't reach the data yet. Check your connection."), 10000);
+  const onErr = e => { clearTimeout(timer); setSync("Data unavailable: " + errText(e)); };
+  const core = (name, coll, key) => S.subs.push(S.db.collection(coll).onSnapshot(snap => {
+    clearTimeout(timer);
+    S[key] = snapRows(snap);
+    S.coreReady[name] = true;
+    if (!snap.metadata.fromCache) setSync("Up to date");
+    afterCore();
+  }, onErr));
+  core("cars", "cars", "cars");
+  core("drivers", "drivers", "drivers");
+  core("assigns", "assignments", "assigns");
+  S.subs.push(S.db.doc("settings/main").onSnapshot(snap => {
+    S.settings = { ...DEFAULT_SETTINGS, ...(snap.exists ? snap.data() : {}) };
+    S.coreReady.settings = true;
+    afterCore();
+  }, onErr));
+  logVisit();
+}
+
+/* ---- Staff (admin, manager, data entry): every fleet in the organisation ---- */
+function startStaff(o) {
+  stopAll();
+  S.mode = "staff"; S.role = "manager"; S.org = o.id; S.orgName = o.name; S.staffRole = o.role;
+  S.canWrite = true; S.canManage = o.role === "admin" || o.role === "manager"; S.isAdmin = o.role === "admin";
+  try { localStorage.setItem("org", o.id); } catch (e) {}
+  setSync("Loading…");
+  S.top.push(S.raw.collection(`orgs/${o.id}/members`).onSnapshot(snap => {
+    S.members = snapRows(snap);
+    for (const m of S.members) S.names[m.id] = m.name || "Staff";
+    const mine = S.members.find(m => m.id === S.uid);
+    if (mine && mine.role !== S.staffRole) { S.staffRole = mine.role; S.canManage = mine.role !== "clerk"; S.isAdmin = mine.role === "admin"; }
+    render();
+  }, () => {}));
+  const timer = setTimeout(() => setSync("Can't reach the data yet. Check your connection."), 10000);
+  S.top.push(S.raw.collection(`orgs/${o.id}/fleets`).onSnapshot(snap => {
+    clearTimeout(timer);
+    S.fleets = snapRows(snap).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+    S.fleetsReady = true;
+    if (!snap.metadata.fromCache) setSync("Up to date");
+    for (const f of S.fleets) watchFleet(f.id);
+    S.fleetMeta = S.fleets.find(f => f.id === S.fleet) || null;
+    if (!S.fleet) {
+      let saved = null; try { saved = localStorage.getItem("fleet:" + S.org); } catch (e) {}
+      if (saved && S.fleets.some(f => f.id === saved) && S.view !== "owners") { selectFleet(saved); return; }
+    }
+    render();
+  }, e => { clearTimeout(timer); setSync("Data unavailable: " + errText(e)); }));
+}
+function watchFleet(fid) {
+  if (!S.subWatch[fid]) S.subWatch[fid] = S.raw.collection(`${fleetBase(fid)}/submissions`).onSnapshot(snap => { S.subsBy[fid] = snapRows(snap); render(); }, () => {});
+  if (!S.accWatch[fid]) S.accWatch[fid] = S.raw.collection(`${fleetBase(fid)}/access`).onSnapshot(snap => {
+    S.accessBy[fid] = snapRows(snap);
+    for (const a of S.accessBy[fid]) if (a.name) S.names[a.id] = a.name;
+    render();
+  }, () => {});
+}
+const pendingFor = fid => (S.subsBy[fid] || []).filter(x => x.status === "pending").sort((a, b) => String(a.submittedAt).localeCompare(String(b.submittedAt)));
+const pendingAll = () => S.fleets.reduce((t, f) => t + pendingFor(f.id).length, 0);
+
+function selectFleet(fid) {
+  resetFleetState();
+  S.fleet = fid; S.fleetMeta = S.fleets.find(f => f.id === fid) || null;
+  try { localStorage.setItem("fleet:" + S.org, fid); } catch (e) {}
+  setSync("Loading…");
+  loadFleet();
+  if (S.view === "owners") location.hash = "home"; else render();
+  window.scrollTo(0, 0);
+}
+function leaveFleet() {
+  resetFleetState(); S.fleet = null; S.fleetMeta = null;
+  try { localStorage.removeItem("fleet:" + S.org); } catch (e) {}
+  if (location.hash !== "#owners") location.hash = "owners"; else render();
+}
+
+/* ---- Owners, owners' family and drivers: one fleet ---- */
+function startAccess(a) {
+  stopAll();
+  S.org = a.org; S.fleet = a.fleet; S.accessRole = a.role; S.canWrite = false; S.canManage = false; S.isAdmin = false;
+  try { localStorage.setItem("access", `${a.org}/${a.fleet}`); } catch (e) {}
+  S.top.push(S.raw.doc(fleetBase()).onSnapshot(s => { S.fleetMeta = s.exists ? { id: s.id, ...s.data() } : null; render(); }, () => {}));
+  if (a.role === "driver") {
+    S.mode = "driver"; S.role = "driver"; S.driverId = a.driverId;
+    S.top.push(S.raw.doc(`${fleetBase()}/statements/${a.driverId}`).onSnapshot(s => {
+      S.stmt = s.exists ? s.data() : null; S.stmtReady = true;
+      if (!s.metadata.fromCache) setSync("Up to date");
+      render();
+    }, e => { S.stmtReady = true; setSync("Data unavailable: " + errText(e)); render(); }));
+    render(); return;
+  }
+  S.mode = "owner"; S.role = "owner"; S.ownerState = "ready";
+  S.top.push(S.raw.collection(`${fleetBase()}/submissions`).onSnapshot(snap => {
+    S.mySubs = snapRows(snap).sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)));
+    render();
+  }, () => {}));
+  loadFleet();
+  render();
+}
+
+function afterCore() {
+  if (!Object.values(S.coreReady).every(Boolean)) return;
+  const T = todayStr();
+  const months = monthsBetween(monthOf(trackStart()), monthOf(T));
+  const live = new Set(months.slice(-12));
+  for (const m of months) {
+    if (S.loadedMonths.has(m)) continue;
+    S.loadedMonths.add(m);
+    monthBucket(m);
+    for (const k of KINDS) {
+      const col = S.db.collection(`months/${m}/${k}`);
+      if (live.has(m)) S.subs.push(col.onSnapshot(snap => { monthBucket(m)[k] = snapRows(snap); render(); }, e => setSync("Data unavailable: " + e.code)));
+      else col.get().then(snap => { monthBucket(m)[k] = snapRows(snap); render(); }).catch(() => {});
+    }
+  }
+  render();
+}
+
+async function refreshMonth(m, kind) {
+  if (!S.loadedMonths.has(m)) { afterCore(); return; }
+  try { const snap = await S.db.collection(`months/${m}/${kind}`).get(); monthBucket(m)[kind] = snapRows(snap); render(); } catch (e) {}
+}
+
+function setSync(t) { document.getElementById("sync").textContent = t; }
+
+async function save(fn, okMsg) {
+  if (!S.canWrite) { toast("You have view-only access"); return false; }
+  S._logged = false;
+  const fail = e => {
+    const c = e && e.code;
+    if (c === "permission-denied") toast("Not saved: your role can't change this. Ask a manager.");
+    else if (c === "resource-exhausted") toast("Not saved: the free daily limit is used up. Try again tomorrow.");
+    else toast("Not saved, please try again (" + (c || "error") + ")");
+  };
+  const work = Promise.resolve().then(fn);
+  // Offline, Firebase keeps the change on this phone and sends it later; don't leave the form hanging.
+  const r = await Promise.race([work.then(() => "ok", e => e), new Promise(res => setTimeout(() => res("slow"), 6000))]);
+  if (r === "ok") { if (okMsg) toast(okMsg); if (okMsg && !S._logged) logActivity("changed", "setup", okMsg); return true; }
+  if (r === "slow") { toast("Saved on this phone. It will sync when you're back online."); work.catch(fail); return true; }
+  fail(r); return false;
+}
+
+function recordId(ref) { const r = String(ref || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); return r.length >= 6 ? r : null; }
+async function writeRecord(kind, data, oldRec) {
+  const m = monthOf(data.date || data.from);
+  const id = oldRec ? oldRec.id : (kind === "payments" && recordId(data.ref)) || undefined;
+  const oldM = oldRec ? monthOf(oldRec.date || oldRec.from) : null;
+  const col = S.db.collection(`months/${m}/${kind}`);
+  await (id ? col.doc(id) : col.doc()).set({ ...data, updatedAt: new Date().toISOString() });
+  if (oldRec && oldM !== m) await S.db.collection(`months/${oldM}/${kind}`).doc(oldRec.id).delete();
+  logActivity(oldRec ? "edited" : "added", kind, recSummary(kind, data), data.amount);
+  refreshMonth(m, kind); if (oldM && oldM !== m) refreshMonth(oldM, kind);
+}
+async function deleteRecord(kind, rec) {
+  const m = monthOf(rec.date || rec.from);
+  await S.db.collection(`months/${m}/${kind}`).doc(rec.id).delete();
+  logActivity("deleted", kind, recSummary(kind, rec), rec.amount);
+  refreshMonth(m, kind);
+}
+
+/* ============ Rendering ============ */
+function render() {
+  if (!S.raw) return;
+  const v = document.getElementById("view");
+  renderChrome();
+  if (S.mode === "loading") { v.innerHTML = `<div class="card empty">Loading…</div>`; return; }
+  if (S.mode === "welcome") { v.innerHTML = viewWelcome(); return; }
+  if (S.mode === "join") { v.innerHTML = viewJoin(); return; }
+  if (S.mode === "driver") { v.innerHTML = viewDriver(); return; }
+  if (S.mode === "staff" && (!S.fleet || S.view === "owners")) {
+    if (!S.fleetsReady) { v.innerHTML = `<div class="card empty">Loading…</div>`; return; }
+    v.innerHTML = viewOwners(); fillNames(); return;
+  }
+  if (!Object.values(S.coreReady).every(Boolean)) return;
+  S.calc = compute();
+  if (S.mode === "staff") { saveSummary(S.calc); saveStatements(S.calc); }
+  if (S.view === "insights") ensureActivity();
+  const map = { home: viewHome, collect: viewCollect, cars: viewCars, drivers: viewDrivers, insights: viewInsights, more: viewMore, import: viewImport, settings: viewSettings };
+  const fn = map[S.view] || viewHome;
+  const scrollY = window.scrollY;
+  v.innerHTML = fn(S.calc);
+  window.scrollTo(0, scrollY);
+  document.querySelectorAll("nav.tabs a").forEach(a => a.classList.toggle("on", a.dataset.tab === S.view || (S.view === "import" || S.view === "settings") && a.dataset.tab === "more"));
+  document.getElementById("fab").style.display = (S.canWrite || canSubmit()) && S.cars.length ? "" : "none";
+  bindChart();
+  fillNames();
+}
+
+const plate = p => `<span class="plate">${esc(p)}</span>`;
+const pill = (cls, t) => `<span class="pill ${cls}">${esc(t)}</span>`;
+const periodSeg = () => `<div class="seg" role="group" aria-label="Period">${[["month", "This month"], ["last", "Last month"], ["ytd", "Year"], ["all", "All time"]].map(([k, l]) => `<button data-action="period" data-v="${k}" class="${S.period === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+
+function onboarding() {
+  const hasCar = S.cars.length > 0, hasDriver = S.drivers.length > 0, hasAssign = S.assigns.length > 0;
+  const step = (n, done, t, d, action, label) => `<div class="step"><b class="n">${done ? "✓" : n}</b><div style="flex:1"><h3>${t}</h3><div class="small muted">${d}</div>${!done && action ? `<div style="margin-top:6px"><button class="btn primary sm" data-action="${action}">${label}</button></div>` : ""}</div></div>`;
+  return `<div class="card"><h2 style="margin-bottom:10px">Set up your fleet</h2><div class="steps">
+    ${step(1, !!S.settings.trackStart, "Choose your start date", "Balances and profit are counted from this date. Use the 1st of the month you start recording.", "edit-settings", "Open settings")}
+    ${step(2, hasCar, "Add each car", "Plate, purchase price and document expiry dates.", "new-car", "Add a car")}
+    ${step(3, hasDriver, "Add each driver", "Name, M-Pesa phone number, and any balance they already owe.", "new-driver", "Add a driver")}
+    ${step(4, hasAssign, "Assign drivers to cars", "Set the daily rate and rest day. This creates the expected payments.", "new-assign", "Assign a driver")}
+  </div></div>`;
+}
+
+function viewHome(c) {
+  const ap = approvalsCard();
+  if (!S.cars.length || !S.drivers.length || !S.assigns.length) return ap + (S.role === "owner" ? `<div class="card empty"><h2>Your fleet is being set up</h2><p>Your manager is adding your cars and drivers. They'll show here as soon as they're saved.</p></div>` : onboarding());
+  return ap + viewHomeMain(c);
+}
+function viewHomeMain(c) {
+  const t = c.tot;
+  const dueToday = c.todayRows.reduce((s, r) => s + r.due, 0), paidToday = c.todayRows.reduce((s, r) => s + r.paid, 0);
+  const collRate = t.exp ? t.rev / (t.exp + t.charges) : NaN;
+  const util = t.denom ? t.earn / t.denom : NaN;
+  const margin = t.rev ? t.net / t.rev : NaN;
+  const owing = c.drivers.filter(d => d.balance > 1).sort((a, b) => b.balance - a.balance);
+  return `
+  <div class="section">
+    <div class="section-head"><h2>Today</h2><span class="small muted">${fmtDate(c.T)} · ${DAYS[weekday(c.T)]}</span></div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Collected today</div><div class="value num">${ksh(paidToday)}</div><div class="sub num">of ${ksh(dueToday)} due</div><div class="meter"><i style="width:${dueToday ? Math.min(100, paidToday / dueToday * 100) : 0}%"></i></div></div>
+      <div class="card kpi"><div class="label">Cars earning today</div><div class="value num">${c.cars.filter(x => x.status === "good").length} / ${c.cars.filter(x => !(x.soldDate && x.soldDate <= c.T)).length}</div><div class="sub">${c.cars.filter(x => x.status === "bad").length} off road · ${c.cars.filter(x => x.statusLabel === "No driver").length} without driver</div></div>
+      <div class="card kpi"><div class="label">Total owed by drivers</div><div class="value num" style="color:${t.arrears > 0 ? "var(--bad)" : "var(--good)"}">${ksh(t.arrears)}</div><div class="sub">${owing.length} driver${owing.length === 1 ? "" : "s"} behind</div></div>
+    </div>
+  </div>
+  <div class="section">
+    <div class="section-head"><h2>Needs attention</h2><span class="small muted">${c.alerts.length} item${c.alerts.length === 1 ? "" : "s"}</span></div>
+    ${c.alerts.length ? `<div class="alerts">${c.alerts.slice(0, 8).map(a => `<div class="alert ${a.sev}" ${a.link ? `data-action="open" data-v="${a.link}" style="cursor:pointer"` : ""}><div><div class="what">${esc(a.what)}</div><div class="why">${esc(a.why)}</div></div></div>`).join("")}${c.alerts.length > 8 ? `<div class="small muted">and ${c.alerts.length - 8} more on the Cars and Drivers pages</div>` : ""}</div>` : `<div class="card small muted">Nothing needs attention. Every driver is up to date and every document is current.</div>`}
+  </div>
+  <div class="section">
+    <div class="section-head"><h2>Performance</h2>${periodSeg()}</div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Collected</div><div class="value num">${ksh(t.rev)}</div><div class="sub">${pct(collRate)} of ${ksh(t.exp + t.charges)} expected</div></div>
+      <div class="card kpi"><div class="label">Owner costs</div><div class="value num">${ksh(t.cost)}</div><div class="sub">Service, repairs, insurance, etc.</div></div>
+      <div class="card kpi"><div class="label">Net profit</div><div class="value num" style="color:${t.net < 0 ? "var(--bad)" : "var(--ink)"}">${ksh(t.net)}</div><div class="sub">${pct(margin)} margin</div></div>
+      <div class="card kpi"><div class="label">Utilisation</div><div class="value num">${pct(util)}</div><div class="sub">${t.earn} of ${t.denom} working car-days</div><div class="meter"><i style="width:${isFinite(util) ? util * 100 : 0}%"></i></div></div>
+    </div>
+    <div class="small muted">${esc(c.P.label)}. Expected income counts each driver's daily rate, minus rest days and days the car was off the road for reasons that were not the driver's fault.</div>
+  </div>
+  ${trendChart(c.trend)}
+  <div class="section">
+    <div class="section-head"><h2>Profit by car</h2><span class="small muted">${esc(c.P.label)}</span></div>
+    ${carTable(c.cars)}
+  </div>
+  <div class="section">
+    <div class="section-head"><h2>Driver balances</h2><a class="small" href="#drivers">All drivers</a></div>
+    ${driverList(c.drivers.filter(d => d.assign || d.balance > 1).sort((a, b) => b.balance - a.balance))}
+  </div>`;
+}
+
+function trendChart(tr) {
+  if (!tr.length) return "";
+  const W = Math.max(340, Math.min(640, (document.getElementById("view").clientWidth || 640) - 30)), H = 220, L = 46, R = 8, Tp = 12, B = 26;
+  const max = Math.max(1, ...tr.map(x => Math.max(x.rev, x.cost)));
+  const nice = (() => { const p = Math.pow(10, Math.floor(Math.log10(max))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= max) return m * p; return 10 * p; })();
+  const y = v => Tp + (H - Tp - B) * (1 - v / nice);
+  const gw = (W - L - R) / tr.length, bw = Math.min(26, gw / 3.2);
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => f * nice);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Monthly collections and owner costs">`;
+  for (const t of ticks) s += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${kshShort(t)}</text>`;
+  tr.forEach((m, i) => {
+    const cx = L + gw * i + gw / 2;
+    const bar = (v, x, col, name) => { const top = y(v), h = Math.max(0, H - B - top); return h > 0 ? `<path d="M${x},${H - B} V${top + Math.min(4, h)} q0,-4 4,-4 h${bw - 8} q4,0 4,4 V${H - B} Z" fill="${col}" data-tip="${esc(fmtMonth(m.m))} · ${name}: ${esc(ksh(v))}"/>` : ""; };
+    s += bar(m.rev, cx - bw - 1, "var(--series-1)", "Collected") + bar(m.cost, cx + 1, "var(--series-2)", "Owner costs");
+    s += `<rect x="${cx - gw / 2}" y="${Tp}" width="${gw}" height="${H - Tp - B}" fill="transparent" data-tip="${esc(fmtMonth(m.m))} · Collected ${esc(ksh(m.rev))} · Costs ${esc(ksh(m.cost))} · Net ${esc(ksh(m.rev - m.cost))}"/>`;
+    s += `<text x="${cx}" y="${H - 8}" text-anchor="middle">${MONTHS_SHORT[Number(m.m.slice(5)) - 1]}</text>`;
+  });
+  s += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--muted)" stroke-width="1"/></svg>`;
+  return `<div class="section"><div class="section-head"><h2>Monthly trend</h2><div class="legend"><span><i style="background:var(--series-1)"></i>Collected</span><span><i style="background:var(--series-2)"></i>Owner costs</span></div></div><div class="card">${s}</div></div>`;
+}
+
+function bindChart() {
+  const tip = document.getElementById("tip");
+  document.querySelectorAll("[data-tip]").forEach(el => {
+    el.addEventListener("pointermove", e => { tip.textContent = el.getAttribute("data-tip"); tip.style.display = "block"; const x = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8); tip.style.left = x + "px"; tip.style.top = (e.clientY - 34) + "px"; });
+    el.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  });
+}
+
+function carTable(cars) {
+  if (!cars.length) return `<div class="card empty">No cars yet.</div>`;
+  const rows = [...cars].sort((a, b) => b.net - a.net).map(c => `<tr class="click" data-action="open" data-v="car:${c.id}">
+    <td>${plate(c.plate)}<div class="small muted">${esc([c.make, c.model].filter(Boolean).join(" "))}</div></td>
+    <td>${c.driver ? esc(c.driver.name) : `<span class="muted">—</span>`}<div>${pill(c.status, c.statusLabel)}</div></td>
+    <td class="r">${ksh(c.revP)}<div class="small muted">${pct(c.collRate)} of due</div></td>
+    <td class="r">${ksh(c.costP)}</td>
+    <td class="r"><b style="color:${c.net < 0 ? "var(--bad)" : "inherit"}">${ksh(c.net)}</b></td>
+    <td class="r">${pct(c.util)}</td>
+    <td class="r">${isFinite(c.costPerKm) ? "KSh " + c.costPerKm.toFixed(1) : "—"}</td>
+    <td class="r">${isFinite(c.payback) ? pct(c.payback) : "—"}<div class="small muted">${isFinite(c.monthsLeft) ? (c.monthsLeft === 0 ? "Paid back" : "~" + Math.ceil(c.monthsLeft) + " mo left") : ""}</div></td>
+  </tr>`).join("");
+  return `<div class="table-wrap"><table><thead><tr><th>Car</th><th>Driver</th><th class="r">Collected</th><th class="r">Costs</th><th class="r">Net</th><th class="r">Utilisation</th><th class="r">Cost/km</th><th class="r">Paid back</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function driverList(ds) {
+  if (!ds.length) return `<div class="card empty">No drivers yet.</div>`;
+  return `<div class="list">${ds.map(d => `<div class="li" data-action="open" data-v="driver:${d.id}" style="cursor:pointer">
+    <div class="main"><div class="t">${esc(d.name)} ${d.assign ? plate(carLabel(d.assign.carId)) : `<span class="small muted">Not driving</span>`}</div>
+    <div class="small muted">${d.assign ? ksh(d.rate) + "/day" : ""}${d.lastPay ? " · last paid " + fmtShort(d.lastPay) : " · no payments yet"}</div></div>
+    <div class="end"><b class="num" style="color:${d.balance > 1 ? "var(--bad)" : "var(--good)"}">${d.balance > 1 ? ksh(d.balance) + " owed" : d.balance < -1 ? ksh(-d.balance) + " credit" : "KSh 0"}</b>${pill(d.status, d.statusLabel)}</div>
+  </div>`).join("")}</div>`;
+}
+
+function viewCollect(c) {
+  if (!S.assigns.length) return onboarding();
+  const rows = [...c.todayRows].sort((a, b) => (b.due - b.paid) - (a.due - a.paid));
+  const recent = all("payments").sort((a, b) => (b.date + (b.updatedAt || "")).localeCompare(a.date + (a.updatedAt || ""))).slice(0, 15);
+  return `
+  <div class="section"><div class="section-head"><h2>Today's payments</h2><span class="small muted">${fmtDate(c.T)}</span></div>
+  <div class="list">${rows.map(r => {
+    const dbal = c.drivers.find(d => d.id === r.a.driverId);
+    const state = r.isRest ? pill("neutral", "Rest day") : r.dn && r.dn.excused ? pill("neutral", "Off road") : r.paid >= r.due ? pill("good", "Paid") : r.paid > 0 ? pill("warn", "Part paid") : pill("bad", "Not yet paid");
+    return `<div class="li"><div class="main"><div class="t">${esc(r.driver ? r.driver.name : "?")} ${plate(r.car.plate)}</div>
+      <div class="small muted num">Paid ${ksh(r.paid)} of ${ksh(r.due)}${dbal && dbal.balance > 1 ? ` · owes ${ksh(dbal.balance)} in total` : ""}</div><div>${state}</div></div>
+      <div class="end">${S.canWrite ? `<button class="btn primary sm" data-action="new-payment" data-v="${r.a.driverId}">Record</button>` : ""}<button class="btn sm" data-action="statement" data-v="${r.a.driverId}">Statement</button></div></div>`;
+  }).join("") || `<div class="empty">No drivers are assigned today.</div>`}</div></div>
+  <div class="section"><div class="section-head"><h2>Recent payments</h2><button class="btn sm" data-action="go" data-v="import">Import M-Pesa statement</button></div>
+  ${recordList("payments", recent)}</div>`;
+}
+
+function recordList(kind, rows) {
+  if (!rows.length) return `<div class="card empty">Nothing recorded yet.</div>`;
+  const line = r => {
+    if (kind === "payments") return [`${esc(driverName(r.driverId))} ${r.carId ? plate(carLabel(r.carId)) : ""}`, `${fmtDate(r.date)} · ${esc(r.method || "")}${r.ref ? " · " + esc(r.ref) : ""}`, ksh(r.amount)];
+    if (kind === "expenses") return [`${esc(r.category)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.date)}${r.vendor ? " · " + esc(r.vendor) : ""}${r.chargeDriver ? " · charged to " + esc(driverName(r.driverId)) : ""}${r.note ? " · " + esc(r.note) : ""}`, ksh(r.amount)];
+    if (kind === "downtime") return [`${esc(r.reason)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.from)} → ${r.to ? fmtDate(r.to) : "still off road"}${r.excused === false ? " · driver still owes" : " · driver not charged"}${r.note ? " · " + esc(r.note) : ""}`, `${dayDiff(r.from, r.to || todayStr()) + 1} day(s)`];
+    return [`${plate(carLabel(r.carId))}`, fmtDate(r.date), `${Number(r.km).toLocaleString()} km`];
+  };
+  return `<div class="list">${rows.map(r => { const [a, b, z] = line(r); return `<div class="li"><div class="main"><div class="t">${a}</div><div class="small muted">${b}</div></div><div class="end"><b class="num">${z}</b>${S.canWrite ? `<div class="row-actions"><button class="btn sm" data-action="edit-rec" data-k="${kind}" data-v="${r.id}" data-m="${monthOf(r.date || r.from)}">Edit</button></div>` : ""}</div></div>`; }).join("")}</div>`;
+}
+
+function viewCars(c) {
+  if (S.detail && S.detail.startsWith("car:")) return carDetail(c, S.detail.slice(4));
+  return `<div class="section"><div class="section-head"><h2>Cars</h2><div class="row-actions">${periodSeg()}${S.canWrite ? `<button class="btn primary sm" data-action="new-car">Add car</button>` : ""}</div></div>${carTable(c.cars)}
+  <div class="small muted">Utilisation is the share of working days (rest days excluded) the car was on the road with a driver. Paid back is lifetime net profit divided by purchase price.</div></div>`;
+}
+
+function carDetail(c, id) {
+  const car = c.cars.find(x => x.id === id); if (!car) { S.detail = null; return viewCars(c); }
+  const hist = S.assigns.filter(a => a.carId === id).sort((a, b) => b.start.localeCompare(a.start));
+  const recs = k => all(k).filter(r => r.carId === id).sort((a, b) => (b.date || b.from).localeCompare(a.date || a.from)).slice(0, 10);
+  const iv = Number(car.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000;
+  const doc = (l, d) => { const left = d ? dayDiff(c.T, d) : null; return `<div><span>${l}</span><b>${d ? fmtDate(d) : "—"}</b> ${d ? (left < 0 ? pill("bad", "Expired") : left <= (S.settings.warnDays || 30) ? pill("warn", left + " days") : "") : ""}</div>`; };
+  return `<div class="section"><div class="row-actions"><button class="btn sm" data-action="back">← All cars</button></div>
+  <div class="section-head"><h2>${plate(car.plate)} ${esc([car.make, car.model, car.year].filter(Boolean).join(" "))}</h2>${pill(car.status, car.statusLabel)}</div>
+  <div class="row-actions">${S.canWrite ? `<button class="btn sm" data-action="edit-car" data-v="${id}">Edit car</button><button class="btn sm" data-action="new-assign" data-v="car:${id}">${car.assign ? "Change driver" : "Assign driver"}</button><button class="btn sm" data-action="new-expense" data-v="${id}">Add expense</button><button class="btn sm" data-action="new-downtime" data-v="${id}">Log off-road days</button><button class="btn sm" data-action="new-odo" data-v="${id}">Record mileage</button>` : ""}</div>
+  <div class="card"><div class="detail-grid">
+    <div><span>Driver</span><b>${car.driver ? esc(car.driver.name) : "None"}</b></div>
+    <div><span>Daily rate</span><b>${car.assign ? ksh(car.assign.rate) : "—"}</b></div>
+    <div><span>Purchase price</span><b>${car.price ? ksh(car.price) : "—"}</b></div>
+    <div><span>Lifetime net profit</span><b>${ksh(car.netAll)}</b></div>
+    <div><span>Paid back</span><b>${isFinite(car.payback) ? pct(car.payback) : "—"}</b></div>
+    <div><span>Odometer</span><b>${car.odo.lastKm != null ? car.odo.lastKm.toLocaleString() + " km" : "—"}</b></div>
+    <div><span>Next service at</span><b>${car.odo.lastService ? (car.odo.lastService + iv).toLocaleString() + " km" : "—"}</b></div>
+    ${doc("Insurance expires", car.insuranceExpiry)}${doc("NTSA inspection", car.inspectionExpiry)}${doc("PSV / platform licence", car.tncExpiry)}${doc("Tracker paid to", car.trackerExpiry)}
+  </div></div>
+  <div class="section-head"><h3>${esc(S.calc.P.label)}</h3>${periodSeg()}</div>
+  <div class="grid kpis">
+    <div class="card kpi"><div class="label">Collected</div><div class="value num">${ksh(car.revP)}</div><div class="sub">${pct(car.collRate)} of ${ksh(car.expP)} due</div></div>
+    <div class="card kpi"><div class="label">Costs</div><div class="value num">${ksh(car.costP)}</div><div class="sub">${isFinite(car.costPerKm) ? "KSh " + car.costPerKm.toFixed(1) + " per km" : "Record mileage for cost/km"}</div></div>
+    <div class="card kpi"><div class="label">Net</div><div class="value num">${ksh(car.net)}</div></div>
+    <div class="card kpi"><div class="label">Utilisation</div><div class="value num">${pct(car.util)}</div><div class="sub">${car.downP} off-road, ${car.idleP} idle days</div></div>
+  </div>
+  <h3>Driver history</h3>
+  <div class="list">${hist.map(a => `<div class="li"><div class="main"><div class="t">${esc(driverName(a.driverId))}</div><div class="small muted">${fmtDate(a.start)} → ${a.end ? fmtDate(a.end) : "now"} · ${ksh(a.rate)}/day · rest day ${a.restDay === "" || a.restDay == null ? "none" : DAYS[a.restDay]}</div></div>${S.canWrite ? `<div class="end"><button class="btn sm" data-action="edit-assign" data-v="${a.id}">Edit</button></div>` : ""}</div>`).join("") || `<div class="empty">No drivers assigned yet.</div>`}</div>
+  <h3>Recent expenses</h3>${recordList("expenses", recs("expenses"))}
+  <h3>Off-road days</h3>${recordList("downtime", recs("downtime"))}
+  <h3>Mileage readings</h3>${recordList("odo", recs("odo"))}
+  </div>`;
+}
+
+function viewDrivers(c) {
+  if (S.detail && S.detail.startsWith("driver:")) return driverDetail(c, S.detail.slice(7));
+  const ds = [...c.drivers].sort((a, b) => b.balance - a.balance);
+  return `<div class="section"><div class="section-head"><h2>Drivers</h2>${S.canWrite ? `<div class="row-actions"><button class="btn sm" data-action="new-assign">Assign to car</button><button class="btn primary sm" data-action="new-driver">Add driver</button></div>` : ""}</div>
+  ${driverList(ds)}<div class="small muted">Balance = opening balance + daily rates due + charges (fines, damage) − payments received. Rest days and off-road days that weren't the driver's fault are not charged.</div></div>`;
+}
+
+function driverDetail(c, id) {
+  const d = c.drivers.find(x => x.id === id); if (!d) { S.detail = null; return viewDrivers(c); }
+  const pays = all("payments").filter(p => p.driverId === id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15);
+  const chg = all("expenses").filter(x => x.chargeDriver && x.driverId === id).sort((a, b) => b.date.localeCompare(a.date));
+  const hist = S.assigns.filter(a => a.driverId === id).sort((a, b) => b.start.localeCompare(a.start));
+  return `<div class="section"><div class="row-actions"><button class="btn sm" data-action="back">← All drivers</button></div>
+  <div class="section-head"><h2>${esc(d.name)}</h2>${pill(d.status, d.statusLabel)}</div>
+  <div class="row-actions">${S.canWrite ? `<button class="btn primary sm" data-action="new-payment" data-v="${id}">Record payment</button><button class="btn sm" data-action="edit-driver" data-v="${id}">Edit driver</button><button class="btn sm" data-action="new-assign" data-v="driver:${id}">${d.assign ? "Change car" : "Assign to car"}</button>` : ""}<button class="btn sm" data-action="statement" data-v="${id}">Share statement</button></div>
+  <div class="card"><div class="detail-grid">
+    <div><span>Balance</span><b style="color:${d.balance > 1 ? "var(--bad)" : "var(--good)"}">${d.balance > 1 ? ksh(d.balance) + " owed" : d.balance < -1 ? ksh(-d.balance) + " credit" : "KSh 0"}</b></div>
+    <div><span>Days behind</span><b>${d.balance > 1 && d.rate ? d.daysBehind.toFixed(1) : "0"}</b></div>
+    <div><span>Car</span><b>${d.assign ? plate(carLabel(d.assign.carId)) : "None"}</b></div>
+    <div><span>Daily rate</span><b>${d.rate ? ksh(d.rate) : "—"}</b></div>
+    <div><span>Phone</span><b>${esc(d.phone || "—")}</b></div>
+    <div><span>Driving licence</span><b>${fmtDate(d.licenseExpiry)}</b></div>
+    <div><span>PSV badge</span><b>${fmtDate(d.psvBadgeExpiry)}</b></div>
+    <div><span>Deposit held</span><b>${d.deposit ? ksh(d.deposit) : "—"}</b></div>
+    <div><span>Total paid</span><b>${ksh(d.payAll)}</b></div>
+    <div><span>Total due</span><b>${ksh(d.expAll + d.chgAll + (Number(d.openingBalance) || 0))}</b></div>
+  </div></div>
+  <h3>Payments</h3>${recordList("payments", pays)}
+  <h3>Charges (fines, damage)</h3>${recordList("expenses", chg)}
+  <h3>Cars driven</h3><div class="list">${hist.map(a => `<div class="li"><div class="main"><div class="t">${plate(carLabel(a.carId))}</div><div class="small muted">${fmtDate(a.start)} → ${a.end ? fmtDate(a.end) : "now"} · ${ksh(a.rate)}/day</div></div></div>`).join("") || `<div class="empty">Not assigned yet.</div>`}</div>
+  </div>`;
+}
+
+function viewMore() {
+  const recent = k => all(k).sort((a, b) => (b.date || b.from).localeCompare(a.date || a.from)).slice(0, 20);
+  const tab = S.moreTab || "expenses";
+  const tabs = [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"]];
+  const addAction = { expenses: "new-expense", downtime: "new-downtime", odo: "new-odo", payments: "new-payment" }[tab];
+  return `<div class="section"><div class="section-head"><h2>Records</h2>${S.canWrite ? `<div class="row-actions"><button class="btn sm" data-action="go" data-v="import">Import M-Pesa</button><button class="btn sm" data-action="go" data-v="settings">Settings</button></div>` : ""}</div>${S.role === "owner" ? mySubmissions() : ""}
+  <div class="section-head"><div class="seg">${tabs.map(([k, l]) => `<button data-action="more-tab" data-v="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>${S.canWrite && S.cars.length ? `<button class="btn primary sm" data-action="${addAction}">Add</button>` : canSubmit() && S.cars.length && tab === "expenses" ? `<button class="btn primary sm" data-action="submit-expense">Add expense</button>` : ""}</div>
+  ${recordList(tab, recent(tab))}<div class="small muted">Showing the latest 20. Open a car or driver to see their full history.</div></div>`;
+}
+
+function viewSettings() {
+  const st = S.settings;
+  return `<div class="section"><div class="row-actions"><button class="btn sm" data-action="go" data-v="more">← Records</button></div><h2>Settings</h2>
+  <div class="card"><div class="detail-grid">
+    <div><span>Business name</span><b>${esc(st.name)}</b></div>
+    <div><span>Counting from</span><b>${fmtDate(trackStart())}</b></div>
+    <div><span>Warn before expiry</span><b>${st.warnDays} days</b></div>
+    <div><span>Arrears alert after</span><b>${st.arrearsDays} days unpaid</b></div>
+    <div><span>Default service interval</span><b>${Number(st.serviceIntervalKm).toLocaleString()} km</b></div>
+    <div><span>Warn before service</span><b>${Number(st.serviceWarnKm).toLocaleString()} km</b></div>
+  </div>${S.canWrite ? `<div style="margin-top:12px"><button class="btn primary sm" data-action="edit-settings">Edit settings</button></div>` : ""}</div>
+  <div class="card small"><h3>Who sees this fleet</h3><p class="muted">Your organisation's staff see every fleet. The owner and their family see only this fleet, and the owner's expenses come to a manager for approval. A driver with app access sees only their own statement. Invite people from the Owners page (owners, family, staff) or a driver's statement (drivers).</p></div></div>`;
+}
+
+/* ============ M-Pesa import ============ */
+let IMP = null;
+function viewImport() {
+  const body = !IMP ? `<div class="card"><h3>Upload an M-Pesa statement</h3>
+    <p class="small muted">From the M-Pesa Org Portal (or M-Pesa for Business app), export the Till or Paybill statement as Excel or CSV. The importer reads the <b>Receipt No.</b>, <b>Completion Time</b>, <b>Paid In</b>, <b>Other Party Info</b> and <b>A/C No.</b> columns, then matches each payment to a driver by phone number, name, or the car plate used as account number. Receipts already recorded are skipped.</p>
+    <label class="fl" for="imp-file">Statement file (.xlsx, .xls or .csv)<input id="imp-file" type="file" accept=".xlsx,.xls,.csv"></label>
+    <p class="small muted">Tip: on a Paybill, ask drivers to enter their plate number (e.g. KDA123A) as the account number. That makes matching certain.</p></div>`
+    : importPreview();
+  return `<div class="section"><div class="row-actions"><button class="btn sm" data-action="imp-reset">← Back</button></div><h2>Import M-Pesa payments</h2>${body}</div>`;
+}
+
+function parseAnyDate(v) {
+  if (v == null || v === "") return null;
+  if (typeof v === "number") { const d = XLSX.SSF.parse_date_code(v); return d ? `${d.y}-${String(d.m).padStart(2, "0")}-${String(d.d).padStart(2, "0")}` : null; }
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  m = s.match(/^(\d{1,2})[\/\.-](\d{1,2})[\/\.-](\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const t = Date.parse(s); return isNaN(t) ? null : new Date(t).toISOString().slice(0, 10);
+}
+
+function matchDriver(row) {
+  const T = row.date || todayStr();
+  const hay = (row.party + " " + row.details + " " + row.account).toUpperCase();
+  const acct = normPlate(row.account + " " + row.details);
+  // 1. Plate in account number
+  for (const c of S.cars) { const p = normPlate(c.plate); if (p.length >= 5 && acct.includes(p)) { const a = assignOn(c.id, T); if (a) return { driverId: a.driverId, how: "plate" }; } }
+  // 2. Full phone number
+  const ph = phoneKey(row.party) || phoneKey(row.details);
+  if (ph) { const d = S.drivers.find(d => phoneKey(d.phone) === ph); if (d) return { driverId: d.id, how: "phone" }; }
+  // 3. Name: all name parts found, or first + last
+  let best = null;
+  for (const d of S.drivers) {
+    const parts = String(d.name || "").toUpperCase().split(/\s+/).filter(x => x.length > 1);
+    const hits = parts.filter(p => new RegExp("\\b" + p.replace(/[^A-Z]/g, "") + "\\b").test(hay)).length;
+    if (parts.length && hits >= Math.min(2, parts.length) && (!best || hits > best.hits)) best = { driverId: d.id, how: "name", hits };
+  }
+  return best || { driverId: "", how: "" };
+}
+
+async function handleImportFile(file) {
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: "array", cellDates: false });
+    let rows = [];
+    for (const name of wb.SheetNames) rows = rows.concat(XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: "" }));
+    const hi = rows.findIndex(r => r.some(c => /receipt/i.test(String(c))) && r.some(c => /paid\s*in|amount|credit/i.test(String(c))));
+    if (hi < 0) { toast("Couldn't find the Receipt No. and Paid In columns in this file"); return; }
+    const H = rows[hi].map(c => String(c).trim().toLowerCase());
+    const col = re => H.findIndex(h => re.test(h));
+    const ci = { rec: col(/receipt/), time: col(/completion|date|time/), det: col(/details|description/), paid: col(/paid\s*in|credit|amount/), party: col(/other party|party|sender|name/), acct: col(/a\/c|account|bill ref/), status: col(/status/) };
+    const known = new Set(all("payments").map(p => p.id));
+    const out = [];
+    for (const r of rows.slice(hi + 1)) {
+      const rec = String(r[ci.rec] ?? "").trim(); const amt = num(r[ci.paid]);
+      if (!rec || amt <= 0) continue;
+      if (ci.status >= 0 && r[ci.status] && !/complet/i.test(String(r[ci.status]))) continue;
+      const row = { ref: rec, id: recordId(rec), date: parseAnyDate(r[ci.time]), amount: amt, details: ci.det >= 0 ? String(r[ci.det]) : "", party: ci.party >= 0 ? String(r[ci.party]) : "", account: ci.acct >= 0 ? String(r[ci.acct]) : "" };
+      const m = matchDriver(row);
+      row.driverId = m.driverId; row.how = m.how; row.dup = row.id && known.has(row.id);
+      row.include = !row.dup && !!row.driverId && !!row.date && row.date >= trackStart();
+      out.push(row);
+    }
+    IMP = { rows: out, file: file.name };
+    render();
+  } catch (e) { toast("Couldn't read that file. Try saving it as .xlsx or .csv"); }
+}
+
+function importPreview() {
+  const r = IMP.rows; const sel = r.filter(x => x.include);
+  const opts = id => `<option value="">Not a driver payment</option>` + S.drivers.map(d => `<option value="${d.id}" ${d.id === id ? "selected" : ""}>${esc(d.name)}</option>`).join("");
+  return `<div class="card small">${esc(IMP.file)}: ${r.length} incoming payments found · ${r.filter(x => x.dup).length} already recorded · ${r.filter(x => !x.dup && x.driverId).length} matched to a driver. Check the matches, fix any that are wrong, then import.</div>
+  <div class="table-wrap"><table><thead><tr><th></th><th>Date</th><th>Receipt</th><th class="r">Amount</th><th>From</th><th>Driver</th></tr></thead><tbody>
+  ${r.map((x, i) => `<tr><td><input type="checkbox" id="imp-${i}" data-action="imp-toggle" data-v="${i}" ${x.include ? "checked" : ""} ${x.dup || !x.date ? "disabled" : ""} aria-label="Include ${esc(x.ref)}"></td><td>${x.date ? fmtShort(x.date) : `<span class="err">No date</span>`}</td><td class="small">${esc(x.ref)}${x.dup ? `<div>${pill("neutral", "Already recorded")}</div>` : ""}</td><td class="r">${ksh(x.amount)}</td><td class="small">${esc(x.party || x.details).slice(0, 60)}${x.account ? `<div class="muted">A/C ${esc(x.account)}</div>` : ""}</td>
+  <td><select id="imp-d-${i}" data-action="imp-driver" data-v="${i}" ${x.dup ? "disabled" : ""}>${opts(x.driverId)}</select>${x.how ? `<div class="small muted">matched by ${x.how}</div>` : ""}</td></tr>`).join("")}
+  </tbody></table></div>
+  <div class="row-actions"><button class="btn primary" data-action="imp-go" ${sel.length && S.canWrite ? "" : "disabled"}>Import ${sel.length} payment${sel.length === 1 ? "" : "s"} (${ksh(sel.reduce((t, x) => t + x.amount, 0))})</button></div>`;
+}
+
+async function runImport() {
+  const sel = IMP.rows.filter(x => x.include && x.driverId);
+  let n = 0, total = 0;
+  const btn = document.querySelector('[data-action="imp-go"]'); if (btn) { btn.disabled = true; btn.textContent = "Importing…"; }
+  const touched = new Set();
+  for (const x of sel) {
+    const a = driverAssignOn(x.driverId, x.date);
+    const data = { date: x.date, driverId: x.driverId, carId: a ? a.carId : "", amount: x.amount, method: /paybill/i.test(IMP.file) ? "M-Pesa Paybill" : "M-Pesa Till", ref: x.ref, note: "Imported" + (x.party ? " · " + x.party.slice(0, 60) : ""), updatedAt: new Date().toISOString() };
+    const col = S.db.collection(`months/${monthOf(x.date)}/payments`);
+    const ok = await save(() => (x.id ? col.doc(x.id) : col.doc()).set(data));
+    if (!ok) break;
+    n++; total += Number(x.amount) || 0; touched.add(monthOf(x.date));
+  }
+  if (n) logActivity("imported", "payments", `${n} M-Pesa payment${n === 1 ? "" : "s"} (${ksh(total)}) from ${String(IMP.file || "statement").slice(0, 60)}`, total);
+  touched.forEach(m => refreshMonth(m, "payments"));
+  toast(`Imported ${n} payment${n === 1 ? "" : "s"}`);
+  IMP = null; S.view = "collect"; location.hash = "collect"; render();
+}
+
+/* ============ Statement ============ */
+function statementText(id) {
+  const d = S.calc.drivers.find(x => x.id === id); if (!d) return "";
+  const T = todayStr(), from = (() => { const f = addDays(T, -13); return f < trackStart() ? trackStart() : f; })();
+  const pays = all("payments").filter(p => p.driverId === id && p.date >= from).sort((a, b) => a.date.localeCompare(b.date));
+  const chg = all("expenses").filter(x => x.chargeDriver && x.driverId === id && x.date >= from);
+  const lines = [];
+  lines.push(`${S.settings.name || "Fleet"}: statement for ${d.name}`);
+  if (d.assign) lines.push(`Car ${carLabel(d.assign.carId)} · ${ksh(d.rate)} per day`);
+  lines.push(`As at ${fmtDate(T)}`);
+  lines.push("");
+  lines.push(`Payments since ${fmtShort(from)}:`);
+  if (!pays.length) lines.push("  none");
+  pays.forEach(p => lines.push(`  ${fmtShort(p.date)}  ${ksh(p.amount)}${p.ref ? "  (" + p.ref + ")" : ""}`));
+  if (chg.length) { lines.push(""); lines.push("Charges:"); chg.forEach(x => lines.push(`  ${fmtShort(x.date)}  ${x.category}  ${ksh(x.amount)}${x.note ? " · " + x.note : ""}`)); }
+  lines.push("");
+  lines.push(d.balance > 1 ? `Balance owed: ${ksh(d.balance)} (about ${d.daysBehind.toFixed(1)} days)` : d.balance < -1 ? `You are ${ksh(-d.balance)} in credit. Thank you.` : "You are fully paid up. Thank you.");
+  return lines.join("\n");
+}
+function openStatement(id) {
+  const d = driverById(id); const txt = statementText(id);
+  const wa = phoneKey(d && d.phone) ? `https://wa.me/254${phoneKey(d.phone)}?text=${encodeURIComponent(txt)}` : "";
+  openSheet(`Statement for ${d ? d.name : ""}`, `<pre class="stmt" id="stmt-text">${esc(txt)}</pre>
+  <div class="row-actions" style="margin-top:12px"><button class="btn primary" data-action="copy-stmt">Copy text</button>${wa ? `<a class="btn" href="${wa}" target="_blank" rel="noopener">Open in WhatsApp</a>` : ""}${S.canManage ? `<button class="btn" data-action="invite-driver" data-v="${esc(id)}">Give app access</button>` : ""}</div>
+  <p class="small muted">Send this to the driver by WhatsApp or SMS so they always know their balance.${d && d.phone ? " WhatsApp number: +254 " + esc(phoneKey(d.phone)) : ""}</p>`);
+}
+
+/* ============ Forms ============ */
+function openSheet(title, html) {
+  const sh = document.getElementById("sheet");
+  sh.innerHTML = `<div class="head"><h2 id="sheet-title">${esc(title)}</h2><button class="x" data-action="close" aria-label="Close">×</button></div>${html}`;
+  sh.classList.add("open"); document.getElementById("scrim").classList.add("open");
+  const first = sh.querySelector("input,select,textarea"); if (first && window.innerWidth > 700) first.focus();
+}
+function closeSheet() { document.getElementById("sheet").classList.remove("open"); document.getElementById("scrim").classList.remove("open"); }
+
+function fieldHtml(f) {
+  const id = "f-" + f.id, v = f.value ?? "";
+  if (f.type === "check") return `<label class="ck" for="${id}"><input type="checkbox" id="${id}" ${v ? "checked" : ""}> ${esc(f.label)}</label>${f.hint ? `<div class="hint">${esc(f.hint)}</div>` : ""}`;
+  let input;
+  if (f.type === "select") input = `<select id="${id}" ${f.required ? "required" : ""}>${f.options.map(o => { const [ov, ol] = Array.isArray(o) ? o : [o, o]; return `<option value="${esc(ov)}" ${String(ov) === String(v) ? "selected" : ""}>${esc(ol)}</option>`; }).join("")}</select>`;
+  else if (f.type === "textarea") input = `<textarea id="${id}" rows="2">${esc(v)}</textarea>`;
+  else input = `<input id="${id}" type="${f.type || "text"}" value="${esc(v)}" ${f.required ? "required" : ""} ${f.min ? `min="${f.min}"` : ""} ${f.type === "number" ? 'inputmode="decimal" step="any"' : ""} ${f.placeholder ? `placeholder="${esc(f.placeholder)}"` : ""}>`;
+  return `<label class="fl" for="${id}">${esc(f.label)}${input}${f.hint ? `<span class="hint">${esc(f.hint)}</span>` : ""}</label>`;
+}
+let FORM = null;
+function openForm(title, fields, onSubmit, opts = {}) {
+  FORM = { fields, onSubmit, onDelete: opts.onDelete, deleteLabel: opts.deleteLabel };
+  const rows = []; for (let i = 0; i < fields.length; i++) { const f = fields[i]; if (f.half && fields[i + 1] && fields[i + 1].half) { rows.push(`<div class="two">${fieldHtml(f)}${fieldHtml(fields[i + 1])}</div>`); i++; } else rows.push(fieldHtml(f)); }
+  openSheet(title, `<form class="f" id="the-form" novalidate>${opts.intro ? `<p class="small muted" style="margin:0">${opts.intro}</p>` : ""}${rows.join("")}<div class="err" id="form-err"></div>
+  <div class="row-actions"><button class="btn primary" type="submit">${esc(opts.saveLabel || "Save")}</button>${opts.onDelete ? `<button class="btn danger" type="button" data-action="form-delete">${esc(opts.deleteLabel || "Delete")}</button>` : ""}</div></form>`);
+  const onChange = opts.onChange; if (onChange) { document.getElementById("the-form").addEventListener("change", e => onChange(e, formVals())); }
+}
+function formVals() {
+  const o = {}; for (const f of FORM.fields) { const el = document.getElementById("f-" + f.id); if (!el) continue; o[f.id] = f.type === "check" ? el.checked : f.type === "number" ? (el.value === "" ? "" : Number(el.value)) : el.value.trim(); } return o;
+}
+const carOpts = (blank) => (blank ? [["", blank]] : []).concat(S.cars.filter(c => !c.soldDate || c.soldDate > todayStr()).map(c => [c.id, c.plate + (c.make ? " · " + c.make + " " + (c.model || "") : "")]));
+const driverOpts = (blank) => (blank ? [["", blank]] : []).concat(S.drivers.filter(d => d.status !== "left").map(d => [d.id, d.name]));
+
+function formPayment(driverId, rec) {
+  const T = todayStr(); const a = driverId ? currentAssignForDriver(driverId) : null;
+  openForm(rec ? "Edit payment" : "Record payment", [
+    { id: "driverId", label: "Driver", type: "select", options: driverOpts("Choose driver"), value: rec ? rec.driverId : driverId || "", required: true },
+    { id: "amount", label: "Amount (KSh)", type: "number", value: rec ? rec.amount : a ? a.rate : "", required: true, half: true },
+    { id: "date", label: "Date", type: "date", value: rec ? rec.date : T, required: true, half: true, min: trackStart() },
+    { id: "method", label: "Paid by", type: "select", options: METHODS, value: rec ? rec.method : "M-Pesa Till", half: true },
+    { id: "ref", label: "M-Pesa code", value: rec ? rec.ref : "", placeholder: "e.g. TKG7H2XQ1P", half: true },
+    { id: "note", label: "Note", value: rec ? rec.note : "" }
+  ], async v => {
+    if (!v.driverId) return "Choose the driver who paid";
+    if (!(v.amount > 0)) return "Enter the amount paid";
+    if (!v.date) return "Enter the date";
+    if (v.date < trackStart()) return "Date is before your tracking start date (" + fmtDate(trackStart()) + ")";
+    const id = recordId(v.ref);
+    if (!rec && id && all("payments").some(p => p.id === id)) return "This M-Pesa code is already recorded";
+    const asg = driverAssignOn(v.driverId, v.date);
+    v.carId = asg ? asg.carId : "";
+    return save(() => writeRecord("payments", v, rec), "Payment saved");
+  }, { onDelete: rec ? () => save(() => deleteRecord("payments", rec), "Payment deleted") : null, onChange: (e, v) => { if (e.target.id === "f-driverId" && !rec) { const as = currentAssignForDriver(v.driverId); if (as) document.getElementById("f-amount").value = as.rate; } } });
+}
+
+function formExpense(carId, rec) {
+  openForm(rec ? "Edit expense" : "Add expense", [
+    { id: "carId", label: "Car", type: "select", options: carOpts("Choose car"), value: rec ? rec.carId : carId || "", required: true },
+    { id: "category", label: "Category", type: "select", options: EXPENSE_CATS, value: rec ? rec.category : "Service", half: true },
+    { id: "amount", label: "Amount (KSh)", type: "number", value: rec ? rec.amount : "", required: true, half: true },
+    { id: "date", label: "Date", type: "date", value: rec ? rec.date : todayStr(), half: true, min: trackStart() },
+    { id: "odometer", label: "Odometer (km)", type: "number", value: rec ? rec.odometer : "", half: true, hint: "Needed for service reminders" },
+    { id: "vendor", label: "Garage / supplier", value: rec ? rec.vendor : "" },
+    { id: "chargeDriver", label: "Charge this to the driver", type: "check", value: rec ? rec.chargeDriver : false, hint: "For fines or damage the driver caused. It's added to what they owe." },
+    { id: "note", label: "Note", type: "textarea", value: rec ? rec.note : "" }
+  ], async v => {
+    if (!v.carId) return "Choose the car"; if (!(v.amount > 0)) return "Enter the amount";
+    if (v.date < trackStart()) return "Date is before your tracking start date";
+    if (v.chargeDriver) { const a = assignOn(v.carId, v.date); if (!a) return "No driver had this car on that date, so it can't be charged"; v.driverId = a.driverId; } else v.driverId = "";
+    if (v.odometer === "") delete v.odometer;
+    return save(() => writeRecord("expenses", v, rec), "Expense saved");
+  }, { onDelete: rec ? () => save(() => deleteRecord("expenses", rec), "Expense deleted") : null });
+}
+
+function formDowntime(carId, rec) {
+  openForm(rec ? "Edit off-road days" : "Log off-road days", [
+    { id: "carId", label: "Car", type: "select", options: carOpts("Choose car"), value: rec ? rec.carId : carId || "", required: true },
+    { id: "reason", label: "Reason", type: "select", options: DOWN_REASONS.map(r => r.v), value: rec ? rec.reason : "Service / repair" },
+    { id: "from", label: "From", type: "date", value: rec ? rec.from : todayStr(), half: true, min: trackStart() },
+    { id: "to", label: "Back on the road", type: "date", value: rec ? rec.to : "", half: true, hint: "Leave empty if still off road" },
+    { id: "excused", label: "Driver doesn't pay for these days", type: "check", value: rec ? rec.excused !== false : true, hint: "Untick if the driver was absent by choice and still owes the daily rate." },
+    { id: "note", label: "Note", value: rec ? rec.note : "" }
+  ], async v => {
+    if (!v.carId) return "Choose the car"; if (!v.from) return "Enter the start date";
+    if (v.to && v.to < v.from) return "Back-on-road date is before the start date";
+    return save(() => writeRecord("downtime", v, rec), "Saved");
+  }, { onDelete: rec ? () => save(() => deleteRecord("downtime", rec), "Deleted") : null, onChange: (e, v) => { if (e.target.id === "f-reason") { const r = DOWN_REASONS.find(x => x.v === v.reason); document.getElementById("f-excused").checked = r ? r.excused : true; } } });
+}
+
+function formOdo(carId, rec) {
+  openForm(rec ? "Edit mileage" : "Record mileage", [
+    { id: "carId", label: "Car", type: "select", options: carOpts("Choose car"), value: rec ? rec.carId : carId || "", required: true },
+    { id: "km", label: "Odometer reading (km)", type: "number", value: rec ? rec.km : "", required: true, half: true },
+    { id: "date", label: "Date", type: "date", value: rec ? rec.date : todayStr(), half: true, min: trackStart() }
+  ], async v => {
+    if (!v.carId) return "Choose the car"; if (!(v.km > 0)) return "Enter the reading";
+    return save(() => writeRecord("odo", v, rec), "Mileage saved");
+  }, { intro: "Take a reading once a week, e.g. every Monday. It drives service reminders and cost per km.", onDelete: rec ? () => save(() => deleteRecord("odo", rec), "Deleted") : null });
+}
+
+function formCar(rec) {
+  const r = rec || {};
+  openForm(rec ? "Edit car" : "Add a car", [
+    { id: "plate", label: "Number plate", value: r.plate, required: true, placeholder: "KDA 123A", half: true },
+    { id: "year", label: "Year", type: "number", value: r.year, half: true },
+    { id: "make", label: "Make", value: r.make, placeholder: "Toyota", half: true },
+    { id: "model", label: "Model", value: r.model, placeholder: "Axio", half: true },
+    { id: "purchasePrice", label: "Purchase price (KSh)", type: "number", value: r.purchasePrice, half: true },
+    { id: "inServiceDate", label: "Started earning on", type: "date", value: r.inServiceDate, half: true },
+    { id: "insuranceExpiry", label: "Insurance expires", type: "date", value: r.insuranceExpiry, half: true },
+    { id: "inspectionExpiry", label: "NTSA inspection due", type: "date", value: r.inspectionExpiry, half: true },
+    { id: "tncExpiry", label: "PSV / platform licence expires", type: "date", value: r.tncExpiry, half: true },
+    { id: "trackerExpiry", label: "Tracker paid until", type: "date", value: r.trackerExpiry, half: true },
+    { id: "lastServiceKm", label: "Last service at (km)", type: "number", value: r.lastServiceKm, half: true },
+    { id: "serviceIntervalKm", label: "Service every (km)", type: "number", value: r.serviceIntervalKm || S.settings.serviceIntervalKm, half: true },
+    { id: "soldDate", label: "Sold / retired on", type: "date", value: r.soldDate, hint: "Leave empty while the car is in the fleet" },
+    { id: "notes", label: "Notes", type: "textarea", value: r.notes }
+  ], async v => {
+    if (!v.plate) return "Enter the number plate";
+    v.plate = v.plate.toUpperCase().replace(/\s+/g, " ");
+    if (S.cars.some(c => c.id !== r.id && normPlate(c.plate) === normPlate(v.plate))) return "A car with this plate already exists";
+    const ref = rec ? S.db.collection("cars").doc(rec.id) : S.db.collection("cars").doc();
+    return save(() => ref.set({ ...v, updatedAt: new Date().toISOString() }), rec ? "Car updated" : "Car added");
+  }, { onDelete: rec ? () => { if (S.assigns.some(a => a.carId === rec.id) || all("payments").some(p => p.carId === rec.id)) { toast("This car has history. Set a sold date instead of deleting it."); return false; } return save(() => S.db.collection("cars").doc(rec.id).delete(), "Car deleted"); } : null });
+}
+
+function formDriver(rec) {
+  const r = rec || {};
+  openForm(rec ? "Edit driver" : "Add a driver", [
+    { id: "name", label: "Full name", value: r.name, required: true, hint: "Use the name as it appears on M-Pesa so payments match" },
+    { id: "phone", label: "M-Pesa phone number", type: "tel", value: r.phone, placeholder: "0712 345 678", half: true },
+    { id: "startDate", label: "Joined on", type: "date", value: r.startDate, half: true },
+    { id: "licenseExpiry", label: "Driving licence expires", type: "date", value: r.licenseExpiry, half: true },
+    { id: "psvBadgeExpiry", label: "PSV badge expires", type: "date", value: r.psvBadgeExpiry, half: true },
+    { id: "deposit", label: "Deposit held (KSh)", type: "number", value: r.deposit, half: true },
+    { id: "openingBalance", label: "Already owes (KSh)", type: "number", value: r.openingBalance, half: true, hint: "Arrears from before your start date" },
+    { id: "status", label: "Status", type: "select", options: [["active", "Active"], ["left", "Left the fleet"]], value: r.status || "active" },
+    { id: "notes", label: "Notes", type: "textarea", value: r.notes }
+  ], async v => {
+    if (!v.name) return "Enter the driver's name";
+    const ref = rec ? S.db.collection("drivers").doc(rec.id) : S.db.collection("drivers").doc();
+    return save(() => ref.set({ ...v, updatedAt: new Date().toISOString() }), rec ? "Driver updated" : "Driver added");
+  }, { onDelete: rec ? () => { if (S.assigns.some(a => a.driverId === rec.id) || all("payments").some(p => p.driverId === rec.id)) { toast("This driver has history. Set status to Left instead."); return false; } return save(() => S.db.collection("drivers").doc(rec.id).delete(), "Driver deleted"); } : null });
+}
+
+function formAssign(pre, rec) {
+  const T = todayStr(); const r = rec || {};
+  const carId = r.carId || (pre && pre.startsWith("car:") ? pre.slice(4) : "");
+  const driverId = r.driverId || (pre && pre.startsWith("driver:") ? pre.slice(7) : "");
+  const prevRate = carId && currentAssignForCar(carId) ? currentAssignForCar(carId).rate : "";
+  openForm(rec ? "Edit assignment" : "Assign driver to car", [
+    { id: "carId", label: "Car", type: "select", options: carOpts("Choose car"), value: carId, required: true },
+    { id: "driverId", label: "Driver", type: "select", options: driverOpts("Choose driver"), value: driverId, required: true },
+    { id: "rate", label: "Daily rate (KSh)", type: "number", value: r.rate ?? prevRate, required: true, half: true },
+    { id: "restDay", label: "Rest day", type: "select", options: [["", "No rest day"]].concat(DAYS.map((d, i) => [String(i), d])), value: r.restDay ?? "0", half: true },
+    { id: "start", label: "Starts on", type: "date", value: r.start || T, half: true },
+    { id: "end", label: "Ended on", type: "date", value: r.end || "", half: true, hint: "Leave empty while ongoing" }
+  ], async v => {
+    if (!v.carId || !v.driverId) return "Choose both the car and the driver";
+    if (!(v.rate > 0)) return "Enter the daily rate";
+    if (v.end && v.end < v.start) return "End date is before the start date";
+    const overlaps = (a) => a.id !== r.id && a.start <= (v.end || "9999") && (!a.end || a.end >= v.start);
+    const ops = [];
+    // Auto-close the open assignment for this car / this driver that started earlier
+    for (const a of S.assigns.filter(a => overlaps(a) && (a.carId === v.carId || a.driverId === v.driverId))) {
+      if (!a.end && a.start < v.start) ops.push(() => S.db.collection("assignments").doc(a.id).update({ end: addDays(v.start, -1) }));
+      else return `${a.carId === v.carId ? "This car" : "This driver"} already has an assignment from ${fmtDate(a.start)}${a.end ? " to " + fmtDate(a.end) : ""}. Edit that one first.`;
+    }
+    const ref = rec ? S.db.collection("assignments").doc(rec.id) : S.db.collection("assignments").doc();
+    return save(async () => { for (const op of ops) await op(); await ref.set({ ...v, restDay: v.restDay === "" ? "" : Number(v.restDay), updatedAt: new Date().toISOString() }); }, "Assignment saved");
+  }, { intro: rec ? "" : "If the car or driver already has an open assignment, it will end the day before this one starts.", onDelete: rec ? () => save(() => S.db.collection("assignments").doc(rec.id).delete(), "Assignment deleted") : null });
+}
+
+function formSettings() {
+  const st = S.settings;
+  openForm("Settings", [
+    { id: "name", label: "Business name", value: st.name },
+    { id: "trackStart", label: "Count balances and profit from", type: "date", value: st.trackStart || trackStart(), hint: "Usually the 1st of the month you start recording" },
+    { id: "warnDays", label: "Warn before documents expire (days)", type: "number", value: st.warnDays, half: true },
+    { id: "arrearsDays", label: "Arrears alert after (days unpaid)", type: "number", value: st.arrearsDays, half: true },
+    { id: "serviceIntervalKm", label: "Default service interval (km)", type: "number", value: st.serviceIntervalKm, half: true },
+    { id: "serviceWarnKm", label: "Warn before service (km)", type: "number", value: st.serviceWarnKm, half: true }
+  ], async v => {
+    if (!v.trackStart) return "Choose a start date";
+    return save(() => S.db.doc("settings/main").set({ ...v, updatedAt: new Date().toISOString() }), "Settings saved");
+  });
+}
+
+function quickAdd() {
+  openSheet("Add a record", `<div class="list">
+    ${[["new-payment", "Payment received", "Daily fee from a driver"], ["new-expense", "Expense", "Service, repairs, insurance, fines"], ["new-downtime", "Off-road days", "Garage, accident, no driver"], ["new-odo", "Mileage reading", "Weekly odometer"], ["new-car", "Car", "Add a car to the fleet"], ["new-driver", "Driver", "Add a new driver"], ["new-assign", "Assign driver", "Hand a car to a driver"]].map(([a, t, d]) => `<div class="li" data-action="${a}" style="cursor:pointer"><div class="main"><div class="t">${t}</div><div class="small muted">${d}</div></div><div class="end muted">›</div></div>`).join("")}
+  </div>`);
+}
+
+/* ============ Activity log (who did what) ============ */
+const ACT_LABEL = { payments: "payment", expenses: "expense", downtime: "off-road record", odo: "mileage reading", setup: "" };
+function recSummary(kind, r) {
+  if (!r) return "";
+  if (kind === "payments") return `${ksh(r.amount)} from ${driverName(r.driverId)}`;
+  if (kind === "expenses") return `${r.category || "Expense"} ${ksh(r.amount)} · ${carLabel(r.carId)}`;
+  if (kind === "downtime") return `${r.reason || "Off road"} · ${carLabel(r.carId)}`;
+  if (kind === "odo") return `${Number(r.km || 0).toLocaleString()} km · ${carLabel(r.carId)}`;
+  return "";
+}
+function logActivity(action, kind, summary, amount) {
+  S._logged = true;
+  if (!S.db || !S.uid) return;
+  const T = todayStr();
+  S.db.collection(`months/${monthOf(T)}/activity`).doc().set({
+    uid: S.uid, at: new Date().toISOString(), date: T, action, kind,
+    summary: String(summary || "").slice(0, 160), amount: Number(amount) || 0
+  }).catch(() => {});
+}
+async function logVisit() {
+  if (!S.db || !S.uid || !S.canWrite) return;
+  const T = todayStr(), now = new Date().toISOString();
+  const ref = S.db.collection(`months/${monthOf(T)}/visits`).doc(`${S.uid}_${T}`);
+  try {
+    const snap = await ref.get();
+    const d = snap.exists ? snap.data() : null;
+    await ref.set({ uid: S.uid, date: T, first: d && d.first ? d.first : now, last: now, opens: (d ? Number(d.opens) || 0 : 0) + 1 });
+  } catch (e) {}
+}
+function ensureActivity() {
+  if (S.actLoaded || !S.db) return;
+  S.actLoaded = true;
+  const cur = monthOf(todayStr());
+  for (const m of [addMonths(cur, -1), cur]) {
+    S.subs.push(S.db.collection(`months/${m}/activity`).onSnapshot(sn => { S.act[m] = snapRows(sn); if (S.view === "insights") render(); }, () => {}));
+    S.subs.push(S.db.collection(`months/${m}/visits`).onSnapshot(sn => { S.vis[m] = snapRows(sn); if (S.view === "insights") render(); }, () => {}));
+  }
+}
+const who = id => `<span data-uid="${esc(id)}">${id && id === S.uid ? "You" : "Someone"}</span>`;
+async function fillNames() {
+  const els = [...document.querySelectorAll("[data-uid]")];
+  els.forEach(e => { const id = e.dataset.uid; if (id && id === S.uid) e.textContent = "You"; else if (S.names[id]) e.textContent = S.names[id]; });
+}
+function timeAgo(iso) {
+  if (!iso) return "never";
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (!isFinite(s)) return "—";
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + " min ago";
+  if (s < 86400) return Math.floor(s / 3600) + " h ago";
+  const d = Math.floor(s / 86400);
+  return d === 1 ? "yesterday" : d + " days ago";
+}
+
+/* ============ Insights view ============ */
+const hbars = (rows, fmt) => {
+  if (!rows.length) return `<div class="small muted">Nothing recorded for this period.</div>`;
+  const max = Math.max(1, ...rows.map(r => Math.abs(r.v)));
+  return `<div class="hbars">${rows.map(r => `<div class="hb"${r.link ? ` data-action="open" data-v="${r.link}" style="cursor:pointer"` : ""}>
+    <div class="hb-l">${r.label}</div>
+    <div class="hb-t"><i style="width:${Math.abs(r.v) / max * 100}%;background:${r.color || "var(--series-1)"}"></i></div>
+    <div class="hb-v num">${fmt(r.v)}${r.sub ? `<div class="small muted" style="font-weight:400">${r.sub}</div>` : ""}</div>
+  </div>`).join("")}</div>`;
+};
+
+function viewInsights(c) {
+  if (!S.cars.length || !S.drivers.length || !S.assigns.length) return onboarding();
+  const tab = S.insTab || "business";
+  const seg = `<div class="seg" role="group" aria-label="Insight type">${[["business", "Business"], ["team", "Team activity"]].map(([k, l]) => `<button data-action="ins-tab" data-v="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  return `<div class="section"><div class="section-head"><h2>Insights</h2>${seg}</div></div>${tab === "team" ? insTeam(c) : insBusiness(c)}`;
+}
+
+function insBusiness(c) {
+  const T = c.T, TS = trackStart(), from = c.P.from, to = c.P.to;
+  const inP = d => d >= from && d <= to && d >= TS;
+  const t = c.tot;
+  const live = c.cars.filter(x => !(x.soldDate && x.soldDate <= T));
+  const collRate = t.exp + t.charges ? t.rev / (t.exp + t.charges) : NaN;
+  const costRatio = t.rev ? t.cost / t.rev : NaN;
+  const netPerCarDay = t.denom ? t.net / t.denom : NaN;
+  const rates = S.assigns.filter(a => !a.end || a.end >= from).map(a => Number(a.rate) || 0).filter(Boolean);
+  const avgRate = rates.length ? rates.reduce((s, x) => s + x, 0) / rates.length : 0;
+
+  // Off-road days by reason, with income lost (excused days only; unexcused days are still owed by the driver)
+  const byReason = {}; let lostDown = 0;
+  for (const car of S.cars) {
+    const dm = c.down[car.id]; if (!dm) continue;
+    for (const [d, dn] of dm) {
+      if (!inP(d)) continue;
+      const a = assignOn(car.id, d);
+      if (a && a.restDay !== "" && a.restDay != null && Number(a.restDay) === weekday(d)) continue;
+      const lost = dn.excused ? (a ? Number(a.rate) || 0 : avgRate) : 0;
+      const k = dn.reason || "Other";
+      const r = byReason[k] || (byReason[k] = { days: 0, lost: 0 });
+      r.days++; r.lost += lost; lostDown += lost;
+    }
+  }
+  const idleDays = c.cars.reduce((s, x) => s + (x.idleP || 0), 0), lostIdle = idleDays * avgRate;
+  const reasons = Object.entries(byReason).sort((a, b) => b[1].lost - a[1].lost || b[1].days - a[1].days);
+  if (idleDays) reasons.push(["No driver (not recorded as off-road)", { days: idleDays, lost: lostIdle }]);
+
+  // Owner costs by category
+  const cats = {};
+  for (const x of all("expenses")) { if (!inP(x.date)) continue; const k = x.category || "Other"; cats[k] = (cats[k] || 0) + (Number(x.amount) || 0); }
+  const catRows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+
+  // Arrears ageing
+  const owing = c.drivers.filter(d => d.balance > 1);
+  const buckets = [
+    ["1 to 3 days behind", d => d.rate && d.daysBehind <= 3, "var(--warn)"],
+    ["4 to 7 days behind", d => d.rate && d.daysBehind > 3 && d.daysBehind <= 7, "var(--series-2)"],
+    ["8 to 14 days behind", d => d.rate && d.daysBehind > 7 && d.daysBehind <= 14, "var(--bad)"],
+    ["15+ days behind", d => d.rate && d.daysBehind > 14, "var(--bad)"],
+    ["No longer driving", d => !d.rate, "var(--muted)"]
+  ].map(([label, f, color]) => { const ds = owing.filter(f); return { label: esc(label), v: ds.reduce((s, d) => s + d.balance, 0), sub: ds.length ? `${ds.length} driver${ds.length === 1 ? "" : "s"}` : "", color }; }).filter(r => r.v > 0);
+
+  // Monthly chart: last 12 months
+  const curM = monthOf(T);
+  const months = monthsBetween(addMonths(curM, -11), curM).filter(m => m >= monthOf(TS)).map(m => ({ m, ...(c.fleetM[m] || { rev: 0, cost: 0, exp: 0 }) }));
+
+  // Cars ranked by net profit per working day
+  const carRows = live.map(x => ({ x, perDay: x.denomP ? x.net / x.denomP : 0 })).sort((a, b) => b.perDay - a.perDay);
+
+  // Drivers' payment reliability
+  const drv = c.drivers.filter(d => d.assign || d.payP > 0 || d.balance > 1).map(d => {
+    const pays = all("payments").filter(p => p.driverId === d.id && inP(p.date));
+    return { d, n: pays.length, avg: pays.length ? d.payP / pays.length : 0, since: d.lastPay ? dayDiff(d.lastPay, T) : null };
+  }).sort((a, b) => (isFinite(a.d.collRateP) ? a.d.collRateP : 9) - (isFinite(b.d.collRateP) ? b.d.collRateP : 9));
+
+  // Plain-language findings
+  const F = [];
+  if (isFinite(collRate)) F.push(`You collected <b>${pct(collRate)}</b> of what drivers owed for this period (${ksh(t.rev)} of ${ksh(t.exp + t.charges)}).${collRate < 0.9 ? " Every 10% shortfall is about " + ksh((t.exp + t.charges) * 0.1) + "." : ""}`);
+  if (carRows.length > 1) {
+    const best = carRows[0], worst = carRows[carRows.length - 1];
+    F.push(`Best earner: <b>${esc(best.x.plate)}</b> at ${ksh(best.perDay)} net per working day. Weakest: <b>${esc(worst.x.plate)}</b> at ${ksh(worst.perDay)}${worst.x.costP > worst.x.revP ? ", where costs are bigger than collections" : ""}.`);
+  }
+  if (catRows.length && t.cost) F.push(`<b>${esc(catRows[0][0])}</b> is your biggest owner cost at ${pct(catRows[0][1] / t.cost)} of spending (${ksh(catRows[0][1])}).`);
+  if (lostDown + lostIdle > 0) F.push(`Cars off the road or without a driver cost about <b>${ksh(lostDown + lostIdle)}</b> in lost income${reasons.length ? `, mostly from “${esc(reasons[0][0])}”` : ""}.`);
+  const late = owing.filter(d => d.rate && d.daysBehind > 7);
+  if (late.length) F.push(`<b>${late.length} driver${late.length === 1 ? " is" : "s are"}</b> more than a week behind, owing ${ksh(late.reduce((s, d) => s + d.balance, 0))} between them.`);
+  else if (owing.length) F.push(`No driver is more than a week behind. Total owed is ${ksh(t.arrears)}.`);
+  const mPrev = c.fleetM[addMonths(curM, -1)], mPrev2 = c.fleetM[addMonths(curM, -2)];
+  if (mPrev && mPrev2 && mPrev2.rev - mPrev2.cost) {
+    const n1 = mPrev.rev - mPrev.cost, n2 = mPrev2.rev - mPrev2.cost, ch = (n1 - n2) / Math.abs(n2);
+    F.push(`Net profit for ${fmtMonth(addMonths(curM, -1))} was ${ksh(n1)}, ${ch >= 0 ? "up" : "down"} ${pct(Math.abs(ch))} on ${fmtMonth(addMonths(curM, -2))}.`);
+  }
+
+  return `
+  <div class="section">
+    <div class="section-head"><h2>Key findings</h2>${periodSeg()}</div>
+    <div class="card">${F.length ? `<ul class="findings">${F.map(x => `<li>${x}</li>`).join("")}</ul>` : `<div class="small muted">Record a few weeks of payments and expenses to see findings here.</div>`}</div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Collection rate</div><div class="value num" style="color:${collRate < 0.9 ? "var(--bad)" : "var(--ink)"}">${pct(collRate)}</div><div class="sub">of expected payments</div></div>
+      <div class="card kpi"><div class="label">Net per car-day</div><div class="value num">${isFinite(netPerCarDay) ? ksh(netPerCarDay) : "—"}</div><div class="sub">after owner costs</div></div>
+      <div class="card kpi"><div class="label">Costs vs collected</div><div class="value num">${pct(costRatio)}</div><div class="sub">of every shilling collected</div></div>
+      <div class="card kpi"><div class="label">Lost to downtime</div><div class="value num" style="color:${lostDown + lostIdle > 0 ? "var(--bad)" : "var(--ink)"}">${ksh(lostDown + lostIdle)}</div><div class="sub">estimated · ${esc(c.P.label)}</div></div>
+    </div>
+  </div>
+  ${monthChart(months)}
+  <div class="section"><div class="section-head"><h2>Cars ranked</h2><span class="small muted">Net profit per working day</span></div>
+    <div class="card">${hbars(carRows.map(({ x, perDay }) => ({ label: plate(x.plate), v: perDay, color: perDay < 0 ? "var(--bad)" : "var(--good)", sub: `${pct(x.util)} on road`, link: "car:" + x.id })), v => ksh(v))}</div></div>
+  <div class="section"><div class="section-head"><h2>Where owner money goes</h2><span class="small muted">${ksh(t.cost)} total</span></div>
+    <div class="card">${hbars(catRows.map(([k, v]) => ({ label: esc(k), v, color: "var(--series-2)", sub: t.cost ? pct(v / t.cost) : "" })), v => ksh(v))}</div></div>
+  <div class="section"><div class="section-head"><h2>Off-road days</h2><span class="small muted">Income lost by reason</span></div>
+    <div class="card">${hbars(reasons.map(([k, r]) => ({ label: esc(k), v: r.lost, color: "var(--bad)", sub: `${r.days} day${r.days === 1 ? "" : "s"}` })), v => ksh(v))}
+    <div class="small muted" style="margin-top:8px">Lost income counts working days when the driver wasn’t charged. “Driver absent” days are still owed, so they show days but no loss.</div></div></div>
+  <div class="section"><div class="section-head"><h2>Arrears by age</h2><span class="small muted">${ksh(t.arrears)} owed now</span></div>
+    <div class="card">${buckets.length ? hbars(buckets, v => ksh(v)) : `<div class="small muted">No driver owes anything.</div>`}</div></div>
+  <div class="section"><div class="section-head"><h2>Driver reliability</h2><span class="small muted">${esc(c.P.label)}</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Driver</th><th class="r">Paid vs due</th><th class="r">Payments</th><th class="r">Avg payment</th><th class="r">Last paid</th><th class="r">Balance</th></tr></thead><tbody>
+    ${drv.map(({ d, n, avg, since }) => `<tr class="click" data-action="open" data-v="driver:${d.id}"><td>${esc(d.name)}<div>${pill(d.status, d.statusLabel)}</div></td>
+      <td class="r" style="color:${d.collRateP < 0.9 ? "var(--bad)" : "inherit"}">${pct(d.collRateP)}</td><td class="r">${n}</td><td class="r">${n ? ksh(avg) : "—"}</td>
+      <td class="r">${since == null ? "never" : since === 0 ? "today" : since + " d ago"}</td>
+      <td class="r"><b style="color:${d.balance > 1 ? "var(--bad)" : "var(--good)"}">${d.balance > 1 ? ksh(d.balance) : d.balance < -1 ? ksh(-d.balance) + " cr" : "KSh 0"}</b></td></tr>`).join("") || `<tr><td colspan="6" class="muted">No drivers yet.</td></tr>`}
+    </tbody></table></div></div>`;
+}
+
+function monthChart(tr) {
+  if (!tr.length) return "";
+  const W = Math.max(340, Math.min(760, (document.getElementById("view").clientWidth || 640) - 30)), H = 230, L = 46, R = 8, Tp = 12, B = 26;
+  const max = Math.max(1, ...tr.map(x => Math.max(x.rev, x.cost, x.exp)));
+  const nice = (() => { const p = Math.pow(10, Math.floor(Math.log10(max))); for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= max) return m * p; return 10 * p; })();
+  const y = v => Tp + (H - Tp - B) * (1 - Math.max(0, v) / nice);
+  const gw = (W - L - R) / tr.length, bw = Math.max(4, Math.min(22, gw / 3.2));
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Expected, collected and owner costs by month">`;
+  for (const f of [0, 0.25, 0.5, 0.75, 1]) { const v = f * nice; s += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${kshShort(v)}</text>`; }
+  tr.forEach((m, i) => {
+    const cx = L + gw * i + gw / 2;
+    const bar = (v, x, col) => { const top = y(v), h = Math.max(0, H - B - top); return h > 0 ? `<rect x="${x}" y="${top}" width="${bw}" height="${h}" rx="2" fill="${col}"/>` : ""; };
+    s += bar(m.rev, cx - bw - 1, "var(--series-1)") + bar(m.cost, cx + 1, "var(--series-2)");
+    if (m.exp > 0) s += `<line x1="${cx - bw - 4}" x2="${cx + 3}" y1="${y(m.exp)}" y2="${y(m.exp)}" stroke="var(--ink)" stroke-width="2" stroke-dasharray="3 2"/>`;
+    s += `<rect x="${cx - gw / 2}" y="${Tp}" width="${gw}" height="${H - Tp - B}" fill="transparent" data-tip="${esc(fmtMonth(m.m))} · Expected ${esc(ksh(m.exp))} · Collected ${esc(ksh(m.rev))} (${esc(m.exp ? pct(m.rev / m.exp) : "—")}) · Costs ${esc(ksh(m.cost))} · Net ${esc(ksh(m.rev - m.cost))}"/>`;
+    if (tr.length <= 7 || i % 2 === tr.length % 2 || i === tr.length - 1) s += `<text x="${cx}" y="${H - 8}" text-anchor="middle">${MONTHS_SHORT[Number(m.m.slice(5)) - 1]}</text>`;
+  });
+  s += `<line x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}" stroke="var(--muted)" stroke-width="1"/></svg>`;
+  return `<div class="section"><div class="section-head"><h2>12-month picture</h2><div class="legend"><span><i style="background:var(--series-1)"></i>Collected</span><span><i style="background:var(--series-2)"></i>Costs</span><span><i style="background:var(--ink);height:2px;vertical-align:3px"></i>Expected</span></div></div><div class="card">${s}<div class="small muted">Tap a month for the details.</div></div></div>`;
+}
+
+function insTeam(c) {
+  const T = c.T, cur = monthOf(T);
+  const acts = Object.values(S.act || {}).flat().filter(a => a && a.uid).sort((a, b) => (b.at || "").localeCompare(a.at || ""));
+  const vis = Object.values(S.vis || {}).flat().filter(v => v && v.uid);
+  const people = {};
+  const P = id => people[id] || (people[id] = { id, entries: 0, opens: 0, days: new Set(), last: "", kinds: {} });
+  for (const a of acts) { const p = P(a.uid); if ((a.at || "") > p.last) p.last = a.at; if ((a.date || "").startsWith(cur)) { p.entries++; p.kinds[a.kind] = (p.kinds[a.kind] || 0) + 1; } }
+  for (const v of vis) { const p = P(v.uid); if ((v.last || "") > p.last) p.last = v.last; if ((v.date || "").startsWith(cur)) { p.opens += Number(v.opens) || 0; p.days.add(v.date); } }
+  const ppl = Object.values(people).sort((a, b) => b.entries - a.entries || b.last.localeCompare(a.last));
+  const monthActs = acts.filter(a => (a.date || "").startsWith(cur));
+
+  // Entries per day, last 30 days
+  const days = []; for (let i = 29; i >= 0; i--) days.push(addDays(T, -i));
+  const perDay = days.map(d => acts.filter(a => a.date === d).length), maxDay = Math.max(1, ...perDay);
+
+  // Data freshness, from the records themselves
+  const latest = k => all(k).reduce((m, x) => { const d = x.date || x.from || ""; return d > m ? d : m; }, "");
+  const lastImport = acts.find(a => a.action === "imported");
+  const fresh = [
+    ["Last payment recorded", latest("payments"), 2],
+    ["Last expense recorded", latest("expenses"), 14],
+    ["Last mileage reading", latest("odo"), 8],
+    ["Last off-road record", latest("downtime"), null]
+  ].map(([label, d, warn]) => { const age = d ? dayDiff(d, T) : null; return `<div class="li"><div class="main"><div class="t">${label}</div><div class="small muted">${d ? fmtDate(d) : "Nothing yet"}</div></div><div class="end">${age == null ? pill("neutral", "None") : warn != null && age > warn ? pill("warn", age + " days ago") : pill("good", age === 0 ? "Today" : age + " day" + (age === 1 ? "" : "s") + " ago")}</div></div>`; }).join("")
+    + `<div class="li"><div class="main"><div class="t">Last M-Pesa import</div><div class="small muted">${lastImport ? esc(lastImport.summary) : "None since activity tracking began"}</div></div><div class="end">${lastImport ? pill("neutral", timeAgo(lastImport.at)) : pill("neutral", "—")}</div></div>`;
+
+  const kindTxt = k => Object.entries(k).map(([kind, n]) => `${n} ${kind === "setup" ? "setup change" : ACT_LABEL[kind] || kind}${n === 1 ? "" : "s"}`).join(", ");
+  const noId = !S.uid ? `<div class="banner">Your account can’t be identified on this page, so your own visits and entries aren’t being logged.</div>` : "";
+
+  return `${noId}
+  <div class="section">
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Entries this month</div><div class="value num">${monthActs.length}</div><div class="sub">payments, expenses, mileage and more</div></div>
+      <div class="card kpi"><div class="label">Active family members</div><div class="value num">${ppl.filter(p => p.entries || p.opens).length}</div><div class="sub">opened or edited this month</div></div>
+      <div class="card kpi"><div class="label">Last change</div><div class="value" style="font-size:20px">${acts[0] ? timeAgo(acts[0].at) : "—"}</div><div class="sub">${acts[0] ? who(acts[0].uid) : "No entries logged yet"}</div></div>
+    </div>
+  </div>
+  <div class="section"><div class="section-head"><h2>Who’s keeping the books</h2><span class="small muted">${fmtMonth(cur)}</span></div>
+    ${ppl.length ? `<div class="list">${ppl.map(p => `<div class="li"><div class="main"><div class="t">${who(p.id)}</div><div class="small muted">${p.entries ? kindTxt(p.kinds) : "No entries this month"}</div></div>
+      <div class="end"><b class="num">${p.entries} entr${p.entries === 1 ? "y" : "ies"}</b><span class="small muted">${p.days.size} day${p.days.size === 1 ? "" : "s"} active · seen ${timeAgo(p.last)}</span></div></div>`).join("")}</div>`
+      : `<div class="card empty">Nobody has been logged yet. Visits and entries are tracked from now on.</div>`}
+  </div>
+  <div class="section"><div class="section-head"><h2>Entries per day</h2><span class="small muted">Last 30 days</span></div>
+    <div class="card"><div class="cols">${perDay.map((n, i) => `<i class="${n ? "" : "z"}" style="height:${n ? Math.max(6, n / maxDay * 100) : 3}%" data-tip="${esc(fmtDate(days[i]))} · ${n} entr${n === 1 ? "y" : "ies"}"></i>`).join("")}</div>
+    <div class="small muted" style="display:flex;justify-content:space-between;margin-top:4px"><span>${fmtShort(days[0])}</span><span>Today</span></div></div></div>
+  <div class="section"><div class="section-head"><h2>Is the data up to date?</h2></div><div class="list">${fresh}</div></div>
+  <div class="section"><div class="section-head"><h2>Recent activity</h2><span class="small muted">Latest 25</span></div>
+    ${acts.length ? `<div class="list feed">${acts.slice(0, 25).map(a => `<div class="li"><div class="main"><div class="t">${who(a.uid)} ${esc(a.action)}${a.kind && a.kind !== "setup" && a.action !== "imported" ? " a " + esc(ACT_LABEL[a.kind] || a.kind) : ""}</div><div class="small muted">${esc(a.summary)}</div></div><div class="end small muted">${timeAgo(a.at)}</div></div>`).join("")}</div>`
+      : `<div class="card empty">No activity logged yet. Each payment, expense, mileage reading, import and setup change will appear here with who made it.</div>`}
+    <div class="small muted">Only your team can see this. Activity covers the last two months.</div>
+  </div>`;
+}
+
+/* ============ Events ============ */
+/* ============ Managed fleets: chrome, owners, people, approvals ============ */
+function renderChrome() {
+  const bar = document.getElementById("fleetbar"), ban = document.getElementById("banner"), h1 = document.getElementById("biz-name");
+  const nav = document.querySelector("nav.tabs"), fab = document.getElementById("fab");
+  ban.innerHTML = ""; bar.innerHTML = "";
+  if (S.mode === "staff") {
+    const n = pendingAll(), inOwners = !S.fleet || S.view === "owners";
+    h1.textContent = inOwners ? (S.orgName || "Fleet Ledger") : (S.fleetMeta && S.fleetMeta.name) || S.settings.name || "Fleet";
+    if (!inOwners) bar.innerHTML = `<button class="btn sm" data-action="all-owners">← All fleets${n ? `<span class="count">${n}</span>` : ""}</button><span class="who">${esc(ROLE_LABEL[S.staffRole] || "Staff")} view · the owner sees only this fleet</span>`;
+    nav.style.display = inOwners ? "none" : "";
+    if (inOwners) fab.style.display = "none";
+  } else if (S.mode === "owner") {
+    h1.textContent = (S.fleetMeta && S.fleetMeta.name) || "My fleet";
+    const p = S.mySubs.filter(x => x.status === "pending").length;
+    bar.innerHTML = `<span class="who">${S.accessRole === "owner" ? "Owner view" : "Family view (view only)"}${p ? ` · ${p} expense${p === 1 ? "" : "s"} waiting for approval` : ""}</span>`;
+    ban.innerHTML = `<div class="banner">${S.accessRole === "owner" ? "This is your fleet, run by your manager. You can add expenses you paid; they count once a manager approves them." : "You can see this fleet but not change it."}</div>`;
+    nav.style.display = "";
+  } else {
+    h1.textContent = S.mode === "driver" ? ((S.fleetMeta && S.fleetMeta.name) || "My statement") : "Fleet Ledger";
+    nav.style.display = "none"; fab.style.display = "none";
+  }
+}
+
+function saveSummary(c) {
+  if (!S.fleet || !S.canManage) return;
+  const m = monthOf(c.T), fm = c.fleetM[m] || { rev: 0, cost: 0, exp: 0 };
+  const sum = { month: m, collected: Math.round(fm.rev), expected: Math.round(fm.exp), costs: Math.round(fm.cost), net: Math.round(fm.rev - fm.cost), arrears: Math.round(c.tot.arrears), cars: c.cars.filter(x => !x.soldDate || x.soldDate > c.T).length, alerts: c.alerts.filter(a => a.sev === "bad").length };
+  const key = JSON.stringify(sum);
+  if (key === S._sumKey) return;
+  const prev = S.fleetMeta && S.fleetMeta.summary ? JSON.stringify(S.fleetMeta.summary) : null;
+  S._sumKey = key;
+  if (key === prev) return;
+  clearTimeout(saveSummary._t);
+  const fid = S.fleet;
+  saveSummary._t = setTimeout(() => { if (S.fleet === fid) S.raw.doc(fleetBase(fid)).update({ summary: sum, summaryAt: new Date().toISOString() }).catch(() => {}); }, 1500);
+}
+
+// Each driver's statement is copied to statements/<driverId>, the only thing a driver can read.
+function saveStatements(c) {
+  if (!S.fleet || !S.canWrite) return;
+  if (saveStatements._t) return;
+  const fid = S.fleet;
+  saveStatements._t = setTimeout(() => {
+    saveStatements._t = null;
+    if (S.fleet !== fid || !S.calc) return;
+    S._stmt = S._stmt || {};
+    for (const d of S.calc.drivers) {
+      const body = { name: d.name || "", balance: Math.round(Number(d.balance) || 0), daysBehind: Math.round((Number(d.daysBehind) || 0) * 10) / 10, rate: Number(d.rate) || 0, car: d.assign ? carLabel(d.assign.carId) : "", text: statementText(d.id) };
+      const key = JSON.stringify(body);
+      if (S._stmt[fid + "/" + d.id] === key) continue;
+      S._stmt[fid + "/" + d.id] = key;
+      S.db.doc(`statements/${d.id}`).set({ ...body, updatedAt: new Date().toISOString() }).catch(() => { S._stmt[fid + "/" + d.id] = null; });
+    }
+  }, 2500);
+}
+
+const ownersOf = fid => (S.accessBy[fid] || []).filter(a => a.role === "owner").map(a => a.name || "Owner");
+
+function viewOwners() {
+  const fl = S.fleets, m = monthOf(todayStr());
+  const cur = f => f.summary && f.summary.month === m ? f.summary : null;
+  const tot = fl.reduce((t, f) => { const s = cur(f); if (s) { t.collected += s.collected; t.expected += s.expected; t.net += s.net; } if (f.summary) { t.arrears += f.summary.arrears; t.cars += f.summary.cars; } return t; }, { collected: 0, expected: 0, net: 0, arrears: 0, cars: 0 });
+  const n = pendingAll();
+  const head = `<div class="section-head"><h2>Fleets</h2><div class="row-actions"><button class="btn sm" data-action="team">Team</button>${S.canManage ? `<button class="btn primary sm" data-action="new-fleet">Add fleet</button>` : ""}</div></div>`;
+  if (!fl.length) return `<div class="section">${head}<div class="card"><h3>Set up your first fleet</h3><div class="steps small">
+    <p>1. Tap <b>Add fleet</b> and name it after the owner, e.g. “Mwangi Fleet”. Your own cars can be a fleet too.</p>
+    <p>2. On the fleet, tap <b>People</b> → <b>Invite owner</b> and send them the link by WhatsApp.</p>
+    <p>3. Open the fleet and add its cars, drivers and assignments.</p>
+    <p class="muted">Add your managers and data-entry staff under <b>Team</b>. They see every fleet; owners see only their own.</p></div></div></div>`;
+  const kpis = `<div class="card"><h3>All fleets · ${fmtMonth(m)} to date</h3><div class="detail-grid" style="margin-top:8px">
+    <div><span>Collected</span><b>${ksh(tot.collected)}</b></div><div><span>Expected</span><b>${ksh(tot.expected)}</b></div>
+    <div><span>Owners' net</span><b>${ksh(tot.net)}</b></div><div><span>Drivers owe</span><b>${ksh(tot.arrears)}</b></div>
+    <div><span>Cars</span><b>${tot.cars}</b></div><div><span>Waiting approval</span><b>${n}</b></div></div>
+    <p class="small muted" style="margin:8px 0 0">A fleet's figures refresh when a manager opens it.</p></div>`;
+  const rows = fl.map(f => {
+    const s = cur(f), p = pendingFor(f.id).length, own = ownersOf(f.id);
+    return `<div class="card ownrow" data-action="pick-fleet" data-v="${esc(f.id)}"><div class="section-head" style="margin:0"><h3 style="margin:0">${esc(f.name || "Unnamed fleet")}${p ? `<span class="count" title="Expenses waiting for approval">${p}</span>` : ""}</h3>${S.canManage ? `<div class="row-actions"><button class="btn sm" data-action="fleet-people" data-v="${esc(f.id)}">People</button><button class="btn sm" data-action="edit-fleet" data-v="${esc(f.id)}">Rename</button></div>` : ""}</div>
+      <div class="small muted">${own.length ? "Owner: " + esc(own.join(", ")) : "No owner has joined yet"}${f.summaryAt ? ` · updated ${esc(timeAgo(f.summaryAt))}` : " · not opened yet"}</div>
+      ${s ? `<div class="figs"><div><span>Collected</span><b>${ksh(s.collected)}</b></div><div><span>Expected</span><b>${ksh(s.expected)}</b></div><div><span>Net</span><b>${ksh(s.net)}</b></div><div><span>Drivers owe</span><b>${ksh(s.arrears)}</b></div><div><span>Cars</span><b>${s.cars}</b></div><div><span>Urgent alerts</span><b>${s.alerts}</b></div></div>` : `<p class="small muted" style="margin:8px 0 0">No figures for ${fmtMonth(m)} yet. Open the fleet to calculate them.</p>`}
+    </div>`;
+  }).join("");
+  return `<div class="section">${head}${kpis}${rows}</div>`;
+}
+
+function formFleet(rec) {
+  openForm(rec ? "Rename fleet" : "Add fleet", [{ id: "name", label: "Fleet name", value: rec ? rec.name : "", placeholder: "e.g. Mwangi Fleet", required: true, hint: rec ? "" : "Usually the owner's name. You'll invite the owner next." }], async v => {
+    const name = String(v.name || "").trim().slice(0, 80);
+    if (!name) return "Give the fleet a name";
+    if (rec) return save(() => S.raw.doc(fleetBase(rec.id)).update({ name }), "Fleet renamed");
+    const ref = S.raw.collection(`orgs/${S.org}/fleets`).doc();
+    const ok = await save(async () => {
+      await ref.set({ name, createdAt: new Date().toISOString(), createdBy: S.uid });
+      await S.raw.doc(`${fleetBase(ref.id)}/settings/main`).set({ ...DEFAULT_SETTINGS, name, updatedAt: new Date().toISOString() });
+    }, "Fleet added");
+    if (ok) setTimeout(() => openPeople(ref.id), 300);
+    return ok;
+  });
+}
+
+/* ---- Invites ---- */
+function randCode() { const a = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; return [...crypto.getRandomValues(new Uint8Array(24))].map(x => a[x % a.length]).join(""); }
+async function inviteFlow({ role, fleetId = "", driverId = "", label, to = "them", phone = "" }) {
+  const code = randCode();
+  const data = { orgId: S.org, fleetId, role, label: String(label || "").slice(0, 120), createdBy: S.uid, createdAt: S.raw.TS, expiresAt: S.raw.daysFromNow(14), usedBy: null };
+  if (role === "driver") data.driverId = driverId;
+  try { await S.raw.doc(`invites/${code}`).set(data); }
+  catch (e) { toast("Couldn't create the invite: " + errText(e)); return; }
+  const link = `${location.origin}${location.pathname}?join=${code}`;
+  const msg = `You're invited to ${label} on Fleet Ledger as ${ROLE_LABEL[role]}. Open this link and sign in to join. It works once and expires in 14 days.\n${link}`;
+  const wa = `https://wa.me/${phone ? "254" + phone : ""}?text=${encodeURIComponent(msg)}`;
+  openSheet("Invite link", `<p>Send this to ${esc(to)}. It works once and expires in 14 days.</p><code class="code">${esc(link)}</code>
+    <div class="row-actions" style="margin-top:10px"><a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">Send on WhatsApp</a><button class="btn" data-action="copy-text" data-v="${esc(msg)}">Copy message</button></div>
+    <p class="small muted">Anyone who opens this link first can use it, so send it only to the right person.</p>`);
+}
+
+function openPeople(fid) {
+  const f = S.fleets.find(x => x.id === fid); if (!f) return;
+  const list = (S.accessBy[fid] || []).sort((a, b) => String(a.role).localeCompare(String(b.role)));
+  const drv = id => { const d = S.fleet === fid ? S.drivers.find(x => x.id === id) : null; return d ? ` · ${esc(d.name)}` : ""; };
+  openSheet(`People: ${f.name || "Fleet"}`, `<p class="small muted">Who outside your team can see this fleet.</p>
+    ${list.length ? list.map(a => `<div class="member"><div><b>${esc(a.name || "Unnamed")}</b><div class="small muted">${esc(ROLE_LABEL[a.role] || a.role)}${a.role === "driver" ? drv(a.driverId) : ""}</div></div><button class="btn sm danger" data-action="remove-access" data-v="${esc(fid + "|" + a.id)}">Remove</button></div>`).join("") : `<div class="card empty small">No one yet.</div>`}
+    <div class="row-actions" style="margin-top:12px"><button class="btn primary" data-action="invite-owner" data-v="${esc(fid)}">Invite owner</button><button class="btn" data-action="invite-family" data-v="${esc(fid)}">Invite family (view only)</button></div>
+    <p class="small muted">To give a driver app access, open their statement and tap <b>Give app access</b>.</p>`);
+}
+
+function openTeam() {
+  const ms = S.members.slice().sort((a, b) => ["admin", "manager", "clerk"].indexOf(a.role) - ["admin", "manager", "clerk"].indexOf(b.role));
+  openSheet(`Team: ${S.orgName}`, `<p class="small muted">Staff see and work on every fleet. Managers also add fleets, invite people and approve owners' expenses. Data entry can record payments, expenses, off-road days and mileage, but not delete or approve.</p>
+    ${ms.map(m => `<div class="member"><div><b>${esc(m.name || "Staff")}${m.id === S.uid ? " (you)" : ""}</b></div>${S.isAdmin && m.id !== S.uid ? `<div class="row-actions"><select data-role-for="${esc(m.id)}">${["admin", "manager", "clerk"].map(r => `<option value="${r}"${m.role === r ? " selected" : ""}>${ROLE_LABEL[r]}</option>`).join("")}</select><button class="btn sm danger" data-action="remove-member" data-v="${esc(m.id)}">Remove</button></div>` : `<span class="small muted">${esc(ROLE_LABEL[m.role] || m.role)}</span>`}</div>`).join("")}
+    ${S.isAdmin ? `<div class="row-actions" style="margin-top:12px"><button class="btn primary" data-action="invite-staff" data-v="manager">Invite manager</button><button class="btn" data-action="invite-staff" data-v="clerk">Invite data entry</button></div>` : `<p class="small muted">Only admins can add or remove staff.</p>`}`);
+}
+
+function openAccount() {
+  const role = S.mode === "staff" ? ROLE_LABEL[S.staffRole] + " · " + S.orgName : S.mode === "owner" || S.mode === "driver" ? ROLE_LABEL[S.accessRole] + " · " + ((S.fleetMeta && S.fleetMeta.name) || "") : "";
+  const orgSwitch = S.orgs.length > 1 ? `<h3>Your organisations</h3>${S.orgs.map(o => `<button class="btn${o.id === S.org && S.mode === "staff" ? " primary" : ""}" data-action="switch-org" data-v="${esc(o.id)}">${esc(o.name)}</button>`).join(" ")}` : "";
+  const accSwitch = S.myAccess.length && (S.myAccess.length > 1 || S.orgs.length) ? `<h3>Fleets shared with you</h3>${S.myAccess.map((a, i) => `<button class="btn${S.mode !== "staff" && a.org === S.org && a.fleet === S.fleet ? " primary" : ""}" data-action="switch-access" data-v="${i}">${esc(ROLE_LABEL[a.role])} · fleet ${i + 1}</button>`).join(" ")}` : "";
+  const staffBack = S.mode !== "staff" && S.orgs.length === 1 ? `<button class="btn" data-action="switch-org" data-v="${esc(S.orgs[0].id)}">Back to ${esc(S.orgs[0].name)}</button>` : "";
+  openSheet("Account", `<p><b>${esc(S.me.name || "Signed in")}</b><br><span class="small muted">${esc(S.me.email || "")}</span></p>${role ? `<p class="small">${esc(role)}</p>` : ""}
+    <div class="people">${orgSwitch}${accSwitch}${staffBack}</div>
+    <div class="row-actions" style="margin-top:14px"><button class="btn" data-action="enter-code">I have an invite code</button><button class="btn danger" data-action="sign-out">Sign out</button></div>`);
+}
+
+/* ---- First run and joining ---- */
+function viewWelcome() {
+  return `<div class="section auth"><div class="card"><h2>Welcome${S.me.name ? ", " + esc(S.me.name.split(" ")[0]) : ""}</h2>
+    <p>Were you sent an invite link? Open it on this phone, or paste the code below.</p>
+    <label class="fl" for="code-in">Invite code<input id="code-in" autocomplete="off" placeholder="Paste the code or link"></label>
+    <div class="row-actions" style="margin-top:10px"><button class="btn primary" data-action="use-code">Continue</button></div></div>
+    <div class="card"><h3>Starting fresh?</h3><p class="small muted">Create an organisation if you run cars, your own or other owners'. You'll be its admin.</p>
+    <label class="fl" for="org-name">Organisation name<input id="org-name" placeholder="e.g. Kamau Fleet Management" maxlength="80"></label>
+    <label class="fl" for="my-name">Your name<input id="my-name" value="${esc(S.me.name || "")}" maxlength="80"></label>
+    <div class="row-actions" style="margin-top:10px"><button class="btn primary" data-action="create-org">Create organisation</button></div></div></div>`;
+}
+async function createOrg() {
+  const name = (document.getElementById("org-name").value || "").trim().slice(0, 80);
+  const me = (document.getElementById("my-name").value || "").trim().slice(0, 80);
+  if (!name || !me) { toast("Enter the organisation name and your name"); return; }
+  const id = S.raw.newId("orgs");
+  const b = S.raw.batch();
+  b.set(S.raw.doc(`orgs/${id}`), { name, createdBy: S.uid, createdAt: S.raw.TS });
+  b.set(S.raw.doc(`orgs/${id}/members/${S.uid}`), { role: "admin", name: me, addedAt: S.raw.TS });
+  b.set(S.raw.doc(`users/${S.uid}`), { name: me, orgs: S.raw.arrayUnion(id) }, { merge: true });
+  try { await b.commit(); S.me.name = me; try { localStorage.setItem("org", id); } catch (e) {} toast("Organisation created"); findHome(); }
+  catch (e) { toast("Couldn't create it: " + errText(e)); }
+}
+
+async function showJoin(code) {
+  code = String(code || "").replace(/^.*[?&]join=/, "").replace(/[^A-Za-z0-9]/g, "");
+  if (code.length < 20) { toast("That code doesn't look right"); return; }
+  S.mode = "join"; S.join = { code, state: "loading" }; closeSheet(); render();
+  try {
+    const s = await S.raw.doc(`invites/${code}`).get();
+    if (!s.exists) S.join.state = "missing";
+    else {
+      const d = s.data(); S.join.inv = d;
+      if (d.usedBy === S.uid) S.join.state = "mine";
+      else if (d.usedBy) S.join.state = "used";
+      else if (Date.parse(d.expiresAt) < Date.now()) S.join.state = "expired";
+      else S.join.state = "ready";
+    }
+  } catch (e) { S.join.state = "missing"; }
+  if (S.join.state === "mine") return finishJoin();
+  render();
+}
+function finishJoin() { history.replaceState(null, "", location.pathname + location.hash); S.join = null; findHome(); }
+function viewJoin() {
+  const j = S.join || {};
+  if (j.state === "loading") return `<div class="card empty">Checking your invite…</div>`;
+  const back = `<div class="row-actions" style="margin-top:10px"><button class="btn" data-action="join-cancel">Continue without joining</button></div>`;
+  if (j.state === "missing") return `<div class="card auth"><h2>Invite not found</h2><p>The link may be incomplete. Ask whoever sent it for a new one.</p>${back}</div>`;
+  if (j.state === "used") return `<div class="card auth"><h2>This invite was already used</h2><p>Each link works once. Ask for a new one.</p>${back}</div>`;
+  if (j.state === "expired") return `<div class="card auth"><h2>This invite has expired</h2><p>Links last 14 days. Ask for a new one.</p>${back}</div>`;
+  const inv = j.inv;
+  return `<div class="card auth"><h2>You're invited</h2><p>Join <b>${esc(inv.label || "a fleet")}</b> as <b>${esc(ROLE_LABEL[inv.role] || inv.role)}</b>.</p>
+    <label class="fl" for="join-name">Your name (shown to the team)<input id="join-name" value="${esc(S.me.name || "")}" maxlength="80"></label>
+    <div class="row-actions" style="margin-top:10px"><button class="btn primary" data-action="accept-invite">Join</button><button class="btn" data-action="join-cancel">Not now</button></div>
+    <p class="small muted">Signed in as ${esc(S.me.email || "you")}. If that's the wrong account, sign out from Account first.</p></div>`;
+}
+async function acceptInvite() {
+  const { code, inv } = S.join;
+  const name = (document.getElementById("join-name").value || "").trim().slice(0, 80);
+  if (!name) { toast("Enter your name"); return; }
+  const b = S.raw.batch();
+  if (!inv.fleetId) {
+    b.set(S.raw.doc(`orgs/${inv.orgId}/members/${S.uid}`), { role: inv.role, name, addedAt: S.raw.TS, invite: code });
+    b.set(S.raw.doc(`users/${S.uid}`), { name, orgs: S.raw.arrayUnion(inv.orgId) }, { merge: true });
+  } else {
+    const acc = { uid: S.uid, role: inv.role, name, invite: code, joinedAt: S.raw.TS };
+    if (inv.role === "driver") acc.driverId = inv.driverId;
+    b.set(S.raw.doc(`orgs/${inv.orgId}/fleets/${inv.fleetId}/access/${S.uid}`), acc);
+  }
+  b.update(S.raw.doc(`invites/${code}`), { usedBy: S.uid, usedAt: S.raw.TS });
+  try {
+    await b.commit(); S.me.name = name; toast("You're in");
+    try { if (inv.fleetId) localStorage.setItem("access", `${inv.orgId}/${inv.fleetId}`); else localStorage.setItem("org", inv.orgId); } catch (e) {}
+    finishJoin();
+  } catch (e) { toast("Couldn't join: " + errText(e)); }
+}
+
+/* ---- Driver's own page ---- */
+function viewDriver() {
+  if (!S.stmtReady) return `<div class="card empty">Loading your statement…</div>`;
+  const st = S.stmt;
+  if (!st) return `<div class="card auth"><h2>No statement yet</h2><p>Your statement appears here once your manager updates the ledger. Check back later.</p></div>`;
+  const b = Number(st.balance) || 0;
+  const head = b > 1 ? `<div class="small muted">You owe</div><div class="big-num" style="color:var(--bad)">${ksh(b)}</div><div class="small">About ${esc(String(st.daysBehind))} days behind</div>`
+    : b < -1 ? `<div class="small muted">You are in credit</div><div class="big-num" style="color:var(--good)">${ksh(-b)}</div>`
+    : `<div class="small muted">Balance</div><div class="big-num" style="color:var(--good)">Paid up</div>`;
+  return `<div class="section"><div class="card"><h2 style="margin-top:0">Hi ${esc(String(st.name || "").split(" ")[0])}</h2>${head}
+    ${st.car ? `<p class="small" style="margin-top:10px">Car ${plate(st.car)} · ${ksh(st.rate)} per day</p>` : ""}</div>
+    <div class="card"><h3>Statement</h3><pre class="stmt">${esc(st.text || "")}</pre><p class="small muted">Updated ${esc(timeAgo(st.updatedAt))}. If something looks wrong, contact your manager.</p></div></div>`;
+}
+
+/* ---- Owner expense submissions ---- */
+const SUB_STATUS = { pending: ["warn", "Waiting for approval"], approved: ["good", "Approved"], rejected: ["bad", "Not approved"] };
+function mySubmissions() {
+  const rows = S.mySubs.slice(0, 15);
+  const body = rows.length ? `<div class="list">${rows.map(x => { const [cls, lab] = SUB_STATUS[x.status] || SUB_STATUS.pending; const amt = x.status === "approved" && x.approvedAmount != null && Number(x.approvedAmount) !== Number(x.amount) ? `${ksh(x.approvedAmount)} <span class="small muted">(sent ${ksh(x.amount)})</span>` : ksh(x.amount);
+    return `<div class="li"><div class="main"><div class="t">${esc(x.category)} ${plate(carLabel(x.carId))}</div><div class="small muted">${fmtDate(x.date)}${x.vendor ? " · " + esc(x.vendor) : ""}${x.managerNote ? " · Manager: " + esc(x.managerNote) : ""}</div></div><div class="end"><b class="num">${amt}</b><div>${pill(cls, lab)}</div>${canSubmit() && x.status === "pending" && x.by === S.uid ? `<button class="btn sm" data-action="withdraw-sub" data-v="${esc(x.id)}">Withdraw</button>` : ""}</div></div>`; }).join("")}</div>`
+    : `<div class="card empty small">${canSubmit() ? "Expenses you add appear here until a manager approves them." : "No expenses sent by the owner yet."}</div>`;
+  return `<div class="card"><div class="section-head" style="margin:0 0 8px"><h3 style="margin:0">Expenses sent by the owner</h3>${canSubmit() ? `<button class="btn primary sm" data-action="submit-expense">Add expense</button>` : ""}</div>${body}</div>`;
+}
+
+const expenseFields = r => [
+  { id: "carId", label: "Car", type: "select", options: carOpts("Choose car"), value: r.carId || "", required: true },
+  { id: "category", label: "Category", type: "select", options: EXPENSE_CATS, value: r.category || "Service", half: true },
+  { id: "amount", label: "Amount (KSh)", type: "number", value: r.amount ?? "", required: true, half: true },
+  { id: "date", label: "Date", type: "date", value: r.date || todayStr(), half: true, min: trackStart() },
+  { id: "odometer", label: "Odometer (km)", type: "number", value: r.odometer ?? "", half: true },
+  { id: "vendor", label: "Garage / supplier", value: r.vendor || "" }
+];
+
+function formSubmitExpense() {
+  if (!canSubmit()) return;
+  if (!S.cars.length) { toast("Your manager hasn't added cars yet"); return; }
+  openForm("Add an expense", [...expenseFields({}),
+    { id: "ref", label: "M-Pesa code or receipt no.", value: "", placeholder: "Optional" },
+    { id: "chargeDriver", label: "The driver should pay this back", type: "check", value: false, hint: "For fines or damage. Your manager decides." },
+    { id: "note", label: "Note for your manager", type: "textarea", value: "" }
+  ], async v => {
+    if (!v.carId) return "Choose the car"; if (!(v.amount > 0)) return "Enter the amount"; if (!v.date) return "Enter the date";
+    if (v.odometer === "" || v.odometer == null) delete v.odometer;
+    for (const k of ["vendor", "ref", "note"]) v[k] = String(v[k] || "").slice(0, k === "note" ? 500 : k === "ref" ? 40 : 120);
+    const ref = S.raw.collection(`${fleetBase()}/submissions`).doc();
+    const work = ref.set({ ...v, status: "pending", submittedAt: S.raw.TS, by: S.uid });
+    const r = await Promise.race([work.then(() => "ok", e => e), new Promise(res => setTimeout(() => res("slow"), 6000))]);
+    if (r === "ok") { toast("Sent to your manager for approval"); return true; }
+    if (r === "slow") { toast("Saved on this phone. It will send when you're back online."); return true; }
+    return "Couldn't send: " + errText(r);
+  }, { saveLabel: "Send for approval", intro: "A manager checks it before it's added to your fleet's figures." });
+}
+
+function approvalsCard() {
+  if (S.mode !== "staff") return "";
+  const list = pendingFor(S.fleet); if (!list.length) return "";
+  return `<div class="card" style="border-left:4px solid var(--warn)"><h3>${list.length} expense${list.length === 1 ? "" : "s"} from the owner to approve</h3>${S.canManage ? "" : `<p class="small muted">A manager needs to approve these.</p>`}<div class="list">${list.map(x => `<div class="li"><div class="main"><div class="t">${esc(x.category)} ${plate(carLabel(x.carId))}</div><div class="small muted">${fmtDate(x.date)}${x.vendor ? " · " + esc(x.vendor) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${ksh(x.amount)}</b>${S.canManage ? `<div class="row-actions"><button class="btn primary sm" data-action="review-sub" data-v="${esc(x.id)}">Review</button></div>` : ""}</div></div>`).join("")}</div></div>`;
+}
+
+function reviewSubmission(sid) {
+  const fid = S.fleet, x = (S.subsBy[fid] || []).find(r => r.id === sid);
+  if (!x || x.status !== "pending") { toast("This expense was already handled"); return; }
+  const subRef = () => S.raw.doc(`${fleetBase(fid)}/submissions/${sid}`);
+  openForm("Review owner's expense", [...expenseFields(x),
+    { id: "chargeDriver", label: "Charge this to the driver", type: "check", value: !!x.chargeDriver, hint: "Adds it to what the driver owes." },
+    { id: "note", label: "Note on the record", type: "textarea", value: [x.note, x.ref ? "Ref " + x.ref : ""].filter(Boolean).join(" · ") },
+    { id: "managerNote", label: "Message to the owner", value: "", placeholder: "Optional. Shown to them, e.g. why you changed or declined it" }
+  ], async v => {
+    if (!v.carId) return "Choose the car"; if (!(v.amount > 0)) return "Enter the amount";
+    if (v.date < trackStart()) return "Date is before this fleet's tracking start date";
+    if (v.chargeDriver) { const a = assignOn(v.carId, v.date); if (!a) return "No driver had this car on that date, so it can't be charged"; v.driverId = a.driverId; } else v.driverId = "";
+    if (v.odometer === "" || v.odometer == null) delete v.odometer;
+    const managerNote = String(v.managerNote || "").slice(0, 500); delete v.managerNote;
+    const m = monthOf(v.date);
+    return save(async () => {
+      await S.db.collection(`months/${m}/expenses`).doc("owner_" + sid).set({ ...v, source: "owner", submissionId: sid, updatedAt: new Date().toISOString() });
+      await subRef().update({ status: "approved", approvedAmount: v.amount, managerNote, decidedAt: S.raw.TS, decidedBy: S.uid, expenseId: "owner_" + sid });
+      logActivity("approved", "expenses", recSummary("expenses", v), v.amount);
+      refreshMonth(m, "expenses");
+    }, "Expense approved");
+  }, { saveLabel: "Approve", deleteLabel: "Decline", intro: `Sent by ${esc(S.names[x.by] || "the owner")} on ${fmtDate(String(x.submittedAt || "").slice(0, 10))}. Correct anything that's wrong, then approve.`,
+    onDelete: () => { const note = String((document.getElementById("f-managerNote") || {}).value || "").trim().slice(0, 500); return save(() => subRef().update({ status: "rejected", managerNote: note, decidedAt: S.raw.TS, decidedBy: S.uid }), "Expense declined"); } });
+}
+
+// Two-tap confirm for buttons outside forms
+function confirmTap(el, label) { if (el.dataset.confirm) return true; el.dataset.confirm = "1"; el.textContent = label || "Tap again to confirm"; setTimeout(() => { if (el.isConnected) { delete el.dataset.confirm; } }, 4000); return false; }
+
+function toast(t) { const el = document.getElementById("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(() => el.style.display = "none", 2800); }
+
+function findRec(kind, id, m) { return ((S.months[m] || {})[kind] || []).find(r => r.id === id); }
+
+document.addEventListener("click", async e => {
+  const el = e.target.closest("[data-action]"); if (!el) return;
+  const a = el.dataset.action, v = el.dataset.v;
+  if (el.tagName === "INPUT" || el.tagName === "SELECT") return;
+  if (el.tagName === "A") return;
+  e.preventDefault();
+  switch (a) {
+    case "period": S.period = v; render(); break;
+    case "more-tab": S.moreTab = v; render(); break;
+    case "ins-tab": S.insTab = v; render(); break;
+    case "go": S.detail = null; location.hash = v; break;
+    case "back": S.detail = null; render(); break;
+    case "open": { const [k, id] = v.split(":"); S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
+    case "close": closeSheet(); break;
+    case "quick-add": if (S.mode === "owner") formSubmitExpense(); else quickAdd(); break;
+    case "submit-expense": formSubmitExpense(); break;
+    case "pick-fleet": selectFleet(v); break;
+    case "all-owners": leaveFleet(); break;
+    case "new-fleet": formFleet(); break;
+    case "edit-fleet": formFleet(S.fleets.find(f => f.id === v)); break;
+    case "fleet-people": openPeople(v); break;
+    case "team": openTeam(); break;
+    case "account": openAccount(); break;
+    case "sign-out": if (S.signOut) S.signOut(); break;
+    case "switch-org": { const o = S.orgs.find(x => x.id === v); closeSheet(); if (o) { location.hash = "owners"; startStaff(o); } break; }
+    case "switch-access": { const a = S.myAccess[+v]; closeSheet(); if (a) { location.hash = "home"; startAccess(a); } break; }
+    case "invite-owner": case "invite-family": { const f = S.fleets.find(x => x.id === v); if (f) inviteFlow({ role: a === "invite-owner" ? "owner" : "owner_viewer", fleetId: v, label: f.name || "a fleet", to: a === "invite-owner" ? "the owner" : "the owner's family member" }); break; }
+    case "invite-staff": inviteFlow({ role: v, label: S.orgName, to: "your new team member" }); break;
+    case "invite-driver": { const d = driverById(v); if (d) inviteFlow({ role: "driver", fleetId: S.fleet, driverId: v, label: (S.fleetMeta && S.fleetMeta.name) || "your fleet", to: d.name, phone: phoneKey(d.phone) || "" }); break; }
+    case "remove-access": { if (!confirmTap(el, "Tap again to remove")) break; const [fid, uid] = v.split("|"); if (await save(() => S.raw.doc(`${fleetBase(fid)}/access/${uid}`).delete(), "Access removed")) setTimeout(() => openPeople(fid), 300); break; }
+    case "remove-member": { if (!confirmTap(el, "Tap again to remove")) break; if (await save(() => S.raw.doc(`orgs/${S.org}/members/${v}`).delete(), "Removed from team")) setTimeout(openTeam, 300); break; }
+    case "withdraw-sub": { if (!confirmTap(el, "Tap again")) break; try { await S.raw.doc(`${fleetBase()}/submissions/${v}`).delete(); toast("Withdrawn"); } catch (er) { toast("Couldn't withdraw: " + errText(er)); } break; }
+    case "copy-text": try { await navigator.clipboard.writeText(v); toast("Copied"); } catch (er) { toast("Copy blocked. Select the text and copy it."); } break;
+    case "create-org": createOrg(); break;
+    case "use-code": showJoin((document.getElementById("code-in") || {}).value); break;
+    case "enter-code": { const c = prompt("Paste the invite code or link"); if (c) showJoin(c); break; }
+    case "accept-invite": acceptInvite(); break;
+    case "join-cancel": finishJoin(); break;
+    case "review-sub": reviewSubmission(v); break;
+    case "new-payment": formPayment(v); break;
+    case "new-expense": formExpense(v); break;
+    case "new-downtime": formDowntime(v); break;
+    case "new-odo": formOdo(v); break;
+    case "new-car": formCar(); break;
+    case "new-driver": formDriver(); break;
+    case "new-assign": formAssign(v); break;
+    case "edit-settings": formSettings(); break;
+    case "edit-car": formCar(S.cars.find(c => c.id === v)); break;
+    case "edit-driver": formDriver(S.drivers.find(d => d.id === v)); break;
+    case "edit-assign": formAssign(null, S.assigns.find(x => x.id === v)); break;
+    case "edit-rec": { const k = el.dataset.k, rec = findRec(k, v, el.dataset.m); if (!rec) break; ({ payments: () => formPayment(null, rec), expenses: () => formExpense(null, rec), downtime: () => formDowntime(null, rec), odo: () => formOdo(null, rec) })[k](); break; }
+    case "statement": openStatement(v); break;
+    case "copy-stmt": try { await navigator.clipboard.writeText(document.getElementById("stmt-text").textContent); toast("Statement copied"); } catch (er) { toast("Copy blocked. Select the text and copy it."); } break;
+    case "form-delete": if (el.dataset.confirm) { const r = await FORM.onDelete(); if (r !== false) closeSheet(); } else { el.dataset.confirm = "1"; el.textContent = FORM.deleteLabel ? "Tap again to " + FORM.deleteLabel.toLowerCase() : "Tap again to delete"; } break;
+    case "imp-reset": if (IMP) { IMP = null; render(); } else { location.hash = "more"; } break;
+    case "imp-go": runImport(); break;
+  }
+});
+document.addEventListener("change", async e => {
+  const el = e.target;
+  if (el.dataset.roleFor) { if (await save(() => S.raw.doc(`orgs/${S.org}/members/${el.dataset.roleFor}`).update({ role: el.value }), "Role changed")) setTimeout(openTeam, 300); return; }
+  if (el.id === "imp-file" && el.files[0]) handleImportFile(el.files[0]);
+  if (el.dataset.action === "imp-toggle") { IMP.rows[+el.dataset.v].include = el.checked; render(); }
+  if (el.dataset.action === "imp-driver") { const r = IMP.rows[+el.dataset.v]; r.driverId = el.value; r.how = el.value ? "you" : ""; r.include = !!el.value && !r.dup && !!r.date; render(); }
+});
+document.addEventListener("submit", async e => {
+  if (e.target.id !== "the-form") return;
+  e.preventDefault();
+  const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true;
+  const res = await FORM.onSubmit(formVals());
+  btn.disabled = false;
+  if (typeof res === "string") { document.getElementById("form-err").textContent = res; return; }
+  if (res) closeSheet();
+});
+document.getElementById("scrim").addEventListener("click", closeSheet);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
+
+function route() {
+  const h = (location.hash || "#home").slice(1);
+  const valid = ["home", "collect", "cars", "drivers", "insights", "more", "import", "settings", "owners"];
+  if (S.mode !== "staff" && (h === "import" || h === "settings" || h === "owners")) { if (h !== "home") { location.hash = "home"; return; } }
+  const nv = valid.includes(h) ? h : "home";
+  if (nv !== S.view) { if (!(S.detail && ((nv === "cars" && S.detail.startsWith("car:")) || (nv === "drivers" && S.detail.startsWith("driver:"))))) S.detail = null; }
+  S.view = nv;
+  render();
+}
+window.addEventListener("hashchange", route);
+S.view = (location.hash || "#home").slice(1) || "home";
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+<script type="module">
+/* ============ Firebase: sign-in and database ============ */
+import { firebaseConfig } from "./firebase-config.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, collection, collectionGroup, getDoc, getDocs, setDoc, updateDoc, deleteDoc, onSnapshot, query, where, orderBy, limit, serverTimestamp, Timestamp, writeBatch, arrayUnion } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const view = () => document.getElementById("view");
+const escH = t => String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+if (!firebaseConfig || !firebaseConfig.apiKey || String(firebaseConfig.apiKey).startsWith("PASTE")) {
+  document.getElementById("sync").textContent = "";
+  view().innerHTML = `<div class="card auth"><h2>Almost there</h2><p>Paste your Firebase web app settings into <b>firebase-config.js</b>, then deploy again. See the README for where to find them.</p></div>`;
+  document.querySelector("nav.tabs").style.display = "none";
+  document.getElementById("fab").style.display = "none";
+  throw new Error("Firebase config missing");
+}
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+let fs;
+try { fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+catch (e) { fs = initializeFirestore(app, {}); }
+
+let uid = null;
+const TS = { __serverTime: true };
+const RECORD = /\/months\/[^/]+\/(payments|expenses|downtime|odo)\/[^/]+$/;
+
+// Values going in: server-time marker → serverTimestamp(); records get updatedBy (the rules require it).
+function enc(path, data) {
+  const out = {};
+  for (const [k, v] of Object.entries(data || {})) { if (v === undefined) continue; out[k] = v === TS ? serverTimestamp() : v; }
+  if (RECORD.test(path)) out.updatedBy = uid;
+  return out;
+}
+// Values coming out: Firestore timestamps → ISO strings, which the app already uses everywhere.
+function dec(v) {
+  if (v instanceof Timestamp) return v.toDate().toISOString();
+  if (Array.isArray(v)) return v.map(dec);
+  if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) { const o = {}; for (const k in v) o[k] = dec(v[k]); return o; }
+  return v;
+}
+const wrapDoc = s => ({ id: s.id, path: s.ref.path, exists: s.exists(), data: () => s.exists() ? dec(s.data({ serverTimestamps: "estimate" })) : undefined, metadata: s.metadata });
+const wrapQuery = q => ({ docs: q.docs.map(wrapDoc), size: q.size, empty: q.empty, metadata: q.metadata });
+
+function D(path) {
+  const ref = doc(fs, path);
+  return {
+    id: ref.id, path, ref,
+    get: async () => wrapDoc(await getDoc(ref)),
+    set: (d, opts) => setDoc(ref, enc(path, d), opts || {}),
+    update: d => updateDoc(ref, enc(path, d)),
+    delete: () => deleteDoc(ref),
+    onSnapshot: (next, err) => onSnapshot(ref, s => next(wrapDoc(s)), err)
+  };
+}
+function Q(base, cons = []) {
+  const q = () => cons.length ? query(base, ...cons) : base;
+  return {
+    where: (f, op, v) => Q(base, [...cons, where(f, op, v)]),
+    orderBy: (f, d) => Q(base, [...cons, orderBy(f, d)]),
+    limit: n => Q(base, [...cons, limit(n)]),
+    get: async () => wrapQuery(await getDocs(q())),
+    onSnapshot: (next, err) => onSnapshot(q(), s => next(wrapQuery(s)), err)
+  };
+}
+function C(path) {
+  const col = collection(fs, path);
+  return { ...Q(col), path, doc: id => D(id ? `${path}/${id}` : doc(col).path), add: async d => { const r = doc(col); await setDoc(r, enc(r.path, d)); return D(r.path); } };
+}
+const db = {
+  TS,
+  collection: C,
+  doc: D,
+  group: name => Q(collectionGroup(fs, name)),
+  newId: path => doc(collection(fs, path)).id,
+  arrayUnion: (...xs) => arrayUnion(...xs),
+  daysFromNow: n => Timestamp.fromMillis(Date.now() + n * 864e5),
+  batch: () => {
+    const b = writeBatch(fs);
+    return { set: (d, data, opts) => { b.set(d.ref, enc(d.path, data), opts || {}); }, update: (d, data) => { b.update(d.ref, enc(d.path, data)); }, delete: d => { b.delete(d.ref); }, commit: () => b.commit() };
+  }
+};
+
+/* ---- Sign-in screen ---- */
+const AUTH_ERR = {
+  "auth/invalid-credential": "Wrong email or password.", "auth/wrong-password": "Wrong email or password.", "auth/user-not-found": "No account with that email. Create one instead.",
+  "auth/email-already-in-use": "That email already has an account. Sign in instead.", "auth/weak-password": "Use at least 6 characters for the password.",
+  "auth/invalid-email": "That email address doesn't look right.", "auth/network-request-failed": "No connection. Check your internet and try again.",
+  "auth/popup-closed-by-user": "Google sign-in was closed before finishing.", "auth/too-many-requests": "Too many attempts. Wait a few minutes and try again."
+};
+const authErr = e => AUTH_ERR[e && e.code] || "Something went wrong (" + ((e && e.code) || "error") + ").";
+function showAuth(mode = "in", msg = "") {
+  document.querySelector("nav.tabs").style.display = "none";
+  document.getElementById("fab").style.display = "none";
+  document.getElementById("acct").hidden = true;
+  document.getElementById("fleetbar").innerHTML = ""; document.getElementById("banner").innerHTML = "";
+  document.getElementById("biz-name").textContent = "Fleet Ledger";
+  document.getElementById("sync").textContent = "";
+  const join = new URLSearchParams(location.search).get("join");
+  const up = mode === "up";
+  view().innerHTML = `<div class="auth"><div class="card">
+    <h2>${up ? "Create your account" : "Sign in"}</h2>
+    ${join ? `<p class="small">You've been invited. ${up ? "Create an account" : "Sign in or create an account"} to accept.</p>` : ""}
+    <form id="auth-form">
+      ${up ? `<label class="fl" for="a-name">Your name<input id="a-name" autocomplete="name" required maxlength="80"></label>` : ""}
+      <label class="fl" for="a-email">Email<input id="a-email" type="email" autocomplete="email" required></label>
+      <label class="fl" for="a-pass">Password<input id="a-pass" type="password" autocomplete="${up ? "new-password" : "current-password"}" minlength="6" required></label>
+      <div class="small" id="a-err" style="color:var(--bad);min-height:1.2em">${escH(msg)}</div>
+      <div class="row-actions"><button class="btn primary" type="submit">${up ? "Create account" : "Sign in"}</button></div>
+    </form>
+    <div class="or">or</div>
+    <div class="row-actions"><button class="btn" id="a-google" type="button">Continue with Google</button></div>
+    <p class="small" style="margin-top:14px">${up ? `Have an account? <a href="#" id="a-switch">Sign in</a>` : `New here? <a href="#" id="a-switch">Create an account</a> · <a href="#" id="a-reset">Forgot password</a>`}</p>
+  </div></div>`;
+  const err = t => { document.getElementById("a-err").textContent = t; };
+  document.getElementById("a-switch").onclick = e => { e.preventDefault(); showAuth(up ? "in" : "up"); };
+  const reset = document.getElementById("a-reset");
+  if (reset) reset.onclick = async e => {
+    e.preventDefault();
+    const em = document.getElementById("a-email").value.trim();
+    if (!em) return err("Type your email first, then tap Forgot password.");
+    try { await sendPasswordResetEmail(auth, em); err("Check your email for a reset link."); } catch (x) { err(authErr(x)); }
+  };
+  document.getElementById("a-google").onclick = async () => { try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (x) { err(authErr(x)); } };
+  document.getElementById("auth-form").onsubmit = async e => {
+    e.preventDefault();
+    const em = document.getElementById("a-email").value.trim(), pw = document.getElementById("a-pass").value;
+    const btn = e.target.querySelector("button[type=submit]"); btn.disabled = true; err("");
+    try {
+      if (up) {
+        const name = document.getElementById("a-name").value.trim();
+        try { sessionStorage.setItem("pendingName", name); } catch (x) {}
+        const cred = await createUserWithEmailAndPassword(auth, em, pw);
+        await updateProfile(cred.user, { displayName: name });
+      } else await signInWithEmailAndPassword(auth, em, pw);
+    } catch (x) { err(authErr(x)); btn.disabled = false; }
+  };
+}
+
+let started = false;
+onAuthStateChanged(auth, user => {
+  if (!user) { uid = null; if (started) location.reload(); else showAuth("in"); return; }
+  if (started) return;
+  started = true; uid = user.uid;
+  let name = user.displayName || "";
+  try { name = name || sessionStorage.getItem("pendingName") || ""; } catch (x) {}
+  window.startApp({ db, uid, name, email: user.email || "", signOut: () => signOut(auth) });
+});
+</script>
+
+</body>
+</html>

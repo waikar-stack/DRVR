@@ -1,0 +1,14 @@
+{
+  "name": "Fleet Ledger",
+  "short_name": "Fleet Ledger",
+  "description": "Daily payments, costs and profit for cars leased to ride-hailing drivers.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f2f4f3",
+  "theme_color": "#0f5b66",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
