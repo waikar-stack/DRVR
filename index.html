@@ -3,26 +3,31 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Fleet Ledger</title>
-<meta name="theme-color" content="#0f5b66">
+<title>DRYVR · Empowering Every Journey Forward.</title>
+<meta name="theme-color" content="#022353">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700;800&family=Manrope:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
 /* Layout idea: phone-first operations ledger. Summary strip -> attention list -> tables. Bottom tab bar, sheets for data entry. Plates styled as Kenyan rear plates. */
 :root {
   color-scheme: light;
-  --bg: #f2f4f3;
+  /* DRYVR official palette: Navy #022353, Green #02BD86, Lime #64D153, Teal #008191 */
+  --bg: #F4F7FA;
   --surface: #ffffff;
-  --ink: #14201e;
-  --muted: #5b6866;
-  --line: #dde3e1;
-  --accent: #0f5b66;
+  --ink: #022353;
+  --muted: #51627B;
+  --line: #DCE3EC;
+  --accent: #007481;
   --accent-ink: #ffffff;
-  --accent-soft: #e2eff0;
+  --accent-soft: #E0F3F1;
+  --brand-navy: #022353;
+  --brand-green: #02BD86;
+  --brand-lime: #64D153;
+  --brand-teal: #008191;
   --plate: #f5c518;
   --plate-ink: #111111;
   --good: #1d7a3e;
@@ -33,24 +38,24 @@
   --bad-soft: #fbe6e4;
   --series-1: #2a78d6;
   --series-2: #eb6834;
-  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
-  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-display: "Montserrat", "Segoe UI", Roboto, Arial, sans-serif;
+  --font-body: "Manrope", "Segoe UI", Roboto, Arial, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
   --radius: 10px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0f1514; --surface: #182120; --ink: #e8efed; --muted: #9fb0ad; --line: #2b3735;
-    --accent: #4fb3bf; --accent-ink: #06201f; --accent-soft: #1c3335;
+    --bg: #06142E; --surface: #0D1F3E; --ink: #E9EEF6; --muted: #A0AEC3; --line: #22365C;
+    --accent: #02BD86; --accent-ink: #022353; --accent-soft: #0C3A3E;
     --good: #5cc282; --good-soft: #17301f; --warn: #e3ad4a; --warn-soft: #33280f; --bad: #f07b72; --bad-soft: #3a1b18;
     --series-1: #3987e5; --series-2: #d95926;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0f1514; --surface: #182120; --ink: #e8efed; --muted: #9fb0ad; --line: #2b3735;
-  --accent: #4fb3bf; --accent-ink: #06201f; --accent-soft: #1c3335;
+  --bg: #06142E; --surface: #0D1F3E; --ink: #E9EEF6; --muted: #A0AEC3; --line: #22365C;
+  --accent: #02BD86; --accent-ink: #022353; --accent-soft: #0C3A3E;
   --good: #5cc282; --good-soft: #17301f; --warn: #e3ad4a; --warn-soft: #33280f; --bad: #f07b72; --bad-soft: #3a1b18;
   --series-1: #3987e5; --series-2: #d95926;
 }
@@ -69,8 +74,23 @@ h3 { font-size: 15px; font-weight: 700; }
 
 .app { max-width: 1100px; margin: 0 auto; padding: env(safe-area-inset-top, 0px) 16px 96px; }
 header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 0 12px; }
-header.top .brand { display: flex; flex-direction: column; }
-header.top .brand span { font-size: 12px; color: var(--muted); }
+header.top .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+header.top .brand .ctx { display: flex; flex-direction: column; min-width: 0; border-left: 1px solid var(--line); padding-left: 12px; }
+header.top .brand .ctx h1 { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+header.top .brand #today-label { font-size: 12px; color: var(--muted); }
+.logo { display: inline-block; flex: none; line-height: 0; }
+.logo img { display: block; height: 100%; width: auto; }
+.logo .on-dark { display: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .logo .on-light { display: none; } :root:not([data-theme="light"]) .logo .on-dark { display: block; } }
+:root[data-theme="dark"] .logo .on-light { display: none; } :root[data-theme="dark"] .logo .on-dark { display: block; }
+.brand-hero { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 20px; margin: 8px 0 14px; display: flex; justify-content: center; }
+.brand-hero .logo { height: 92px; max-width: 100%; }
+.brand-hero .logo img { max-width: 100%; height: auto; max-height: 92px; }
+h1, h2 { font-weight: 800; }
+header.top .brand .ctx:has(h1:empty) { display: none; }
+.top-logo { height: 30px; }
+header.top .brand #today-label { white-space: nowrap; }
+@media (max-width: 520px) { .top-logo { height: 22px; } header.top .brand { gap: 8px; } header.top .brand .ctx { padding-left: 8px; } header.top .brand .ctx h1 { font-size: 15px; } #sync { display: none; } .brand-hero .logo, .brand-hero .logo img { height: auto; max-height: 72px; } }
 .banner { padding: 10px 12px; border-radius: var(--radius); background: var(--warn-soft); color: var(--ink); border: 1px solid var(--line); margin-bottom: 12px; font-size: 14px; }
 
 nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center; z-index: 20; padding-bottom: env(safe-area-inset-bottom); }
@@ -203,7 +223,7 @@ pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(-
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><h1 id="biz-name">Fleet Ledger</h1><span id="today-label"></span></div>
+    <div class="brand"><span class="logo top-logo"><img class="on-light" src="logo.png" alt="DRYVR"><img class="on-dark" src="logo-dark.png" alt="DRYVR"></span><div class="ctx"><h1 id="biz-name"></h1><span id="today-label"></span></div></div>
     <div class="row-actions" style="align-items:center"><div id="sync" class="small muted">Connecting…</div><button id="acct" class="btn sm" data-action="account" hidden>Account</button></div>
   </header>
   <div id="fleetbar" class="fleetbar"></div>
@@ -243,7 +263,7 @@ const DOWN_REASONS = [
   { v: "Other", excused: true }
 ];
 const METHODS = ["M-Pesa Till", "M-Pesa Paybill", "M-Pesa (personal)", "Cash", "Bank"];
-const DEFAULT_SETTINGS = { name: "Fleet Ledger", trackStart: "", warnDays: 30, arrearsDays: 2, serviceWarnKm: 500, serviceIntervalKm: 5000 };
+const DEFAULT_SETTINGS = { name: "DRYVR", trackStart: "", warnDays: 30, arrearsDays: 2, serviceWarnKm: 500, serviceIntervalKm: 5000 };
 
 /* ============ Date & format helpers ============ */
 const todayStr = () => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -489,6 +509,9 @@ function compute() {
 /* ============ Data layer ============ */
 function monthBucket(m) { return S.months[m] || (S.months[m] = { payments: [], expenses: [], downtime: [], odo: [] }); }
 const snapRows = snap => snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+/* ============ Brand ============ */
+window.brandHero = () => `<div class="brand-hero"><span class="logo"><img class="on-light" src="logo-full.png" alt="DRYVR: Empowering Every Journey Forward."><img class="on-dark" src="logo-full-dark.png" alt="DRYVR: Empowering Every Journey Forward."></span></div>`;
 
 /* ============ Start-up (the Firebase module calls startApp once someone is signed in) ============ */
 const fleetBase = (fid = S.fleet) => `orgs/${S.org}/fleets/${fid}`;
@@ -1673,7 +1696,7 @@ function renderChrome() {
   ban.innerHTML = ""; bar.innerHTML = "";
   if (S.mode === "staff") {
     const n = pendingAll(), inOwners = !S.fleet || S.view === "owners";
-    h1.textContent = inOwners ? (S.orgName || "Fleet Ledger") : (S.fleetMeta && S.fleetMeta.name) || S.settings.name || "Fleet";
+    h1.textContent = inOwners ? (S.orgName || "Fleets") : (S.fleetMeta && S.fleetMeta.name) || S.settings.name || "Fleet";
     if (!inOwners) bar.innerHTML = `<button class="btn sm" data-action="all-owners">← All fleets${n ? `<span class="count">${n}</span>` : ""}</button><span class="who">${esc(ROLE_LABEL[S.staffRole] || "Staff")} view · the owner sees only this fleet</span>`;
     nav.style.display = inOwners ? "none" : "";
     if (inOwners) fab.style.display = "none";
@@ -1684,7 +1707,7 @@ function renderChrome() {
     ban.innerHTML = `<div class="banner">${S.accessRole === "owner" ? "This is your fleet, run by your manager. You can add expenses you paid; they count once a manager approves them." : "You can see this fleet but not change it."}</div>`;
     nav.style.display = "";
   } else {
-    h1.textContent = S.mode === "driver" ? ((S.fleetMeta && S.fleetMeta.name) || "My statement") : "Fleet Ledger";
+    h1.textContent = S.mode === "driver" ? ((S.fleetMeta && S.fleetMeta.name) || "My statement") : "";
     nav.style.display = "none"; fab.style.display = "none";
   }
 }
@@ -1774,7 +1797,7 @@ async function inviteFlow({ role, fleetId = "", driverId = "", label, to = "them
   try { await S.raw.doc(`invites/${code}`).set(data); }
   catch (e) { toast("Couldn't create the invite: " + errText(e)); return; }
   const link = `${location.origin}${location.pathname}?join=${code}`;
-  const msg = `You're invited to ${label} on Fleet Ledger as ${ROLE_LABEL[role]}. Open this link and sign in to join. It works once and expires in 14 days.\n${link}`;
+  const msg = `You're invited to ${label} on DRYVR as ${ROLE_LABEL[role]}. Open this link and sign in to join. It works once and expires in 14 days.\n${link}`;
   const wa = `https://wa.me/${phone ? "254" + phone : ""}?text=${encodeURIComponent(msg)}`;
   openSheet("Invite link", `<p>Send this to ${esc(to)}. It works once and expires in 14 days.</p><code class="code">${esc(link)}</code>
     <div class="row-actions" style="margin-top:10px"><a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener">Send on WhatsApp</a><button class="btn" data-action="copy-text" data-v="${esc(msg)}">Copy message</button></div>
@@ -1810,7 +1833,7 @@ function openAccount() {
 
 /* ---- First run and joining ---- */
 function viewWelcome() {
-  return `<div class="section auth"><div class="card"><h2>Welcome${S.me.name ? ", " + esc(S.me.name.split(" ")[0]) : ""}</h2>
+  return `<div class="section auth">${brandHero()}<div class="card"><h2>Welcome${S.me.name ? ", " + esc(S.me.name.split(" ")[0]) : ""}</h2>
     <p>Were you sent an invite link? Open it on this phone, or paste the code below.</p>
     <label class="fl" for="code-in">Invite code<input id="code-in" autocomplete="off" placeholder="Paste the code or link"></label>
     <div class="row-actions" style="margin-top:10px"><button class="btn primary" data-action="use-code">Continue</button></div></div>
@@ -1859,10 +1882,10 @@ function viewJoin() {
   if (j.state === "used") return `<div class="card auth"><h2>This invite was already used</h2><p>Each link works once. Ask for a new one.</p>${back}</div>`;
   if (j.state === "expired") return `<div class="card auth"><h2>This invite has expired</h2><p>Links last 14 days. Ask for a new one.</p>${back}</div>`;
   const inv = j.inv;
-  return `<div class="card auth"><h2>You're invited</h2><p>Join <b>${esc(inv.label || "a fleet")}</b> as <b>${esc(ROLE_LABEL[inv.role] || inv.role)}</b>.</p>
+  return `<div class="auth">${brandHero()}<div class="card"><h2>You're invited</h2><p>Join <b>${esc(inv.label || "a fleet")}</b> as <b>${esc(ROLE_LABEL[inv.role] || inv.role)}</b>.</p>
     <label class="fl" for="join-name">Your name (shown to the team)<input id="join-name" value="${esc(S.me.name || "")}" maxlength="80"></label>
     <div class="row-actions" style="margin-top:10px"><button class="btn primary" data-action="accept-invite">Join</button><button class="btn" data-action="join-cancel">Not now</button></div>
-    <p class="small muted">Signed in as ${esc(S.me.email || "you")}. If that's the wrong account, sign out from Account first.</p></div>`;
+    <p class="small muted">Signed in as ${esc(S.me.email || "you")}. If that's the wrong account, sign out from Account first.</p></div></div>`;
 }
 async function acceptInvite() {
   const { code, inv } = S.join;
@@ -2164,11 +2187,11 @@ function showAuth(mode = "in", msg = "") {
   document.getElementById("fab").style.display = "none";
   document.getElementById("acct").hidden = true;
   document.getElementById("fleetbar").innerHTML = ""; document.getElementById("banner").innerHTML = "";
-  document.getElementById("biz-name").textContent = "Fleet Ledger";
+  document.getElementById("biz-name").textContent = "";
   document.getElementById("sync").textContent = "";
   const join = new URLSearchParams(location.search).get("join");
   const up = mode === "up";
-  view().innerHTML = `<div class="auth"><div class="card">
+  view().innerHTML = `<div class="auth">${window.brandHero ? window.brandHero() : ""}<div class="card">
     <h2>${up ? "Create your account" : "Sign in"}</h2>
     ${join ? `<p class="small">You've been invited. ${up ? "Create an account" : "Sign in or create an account"} to accept.</p>` : ""}
     <form id="auth-form">
