@@ -130,28 +130,42 @@ nav.tabs a.on { color: var(--accent); }
 .pill.neutral { background: var(--accent-soft); color: var(--accent); }
 
 .alerts { display: flex; flex-direction: column; gap: 6px; }
-.attn { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 0 0 18px; border-top: 5px solid var(--warn); box-shadow: 0 1px 3px rgba(2, 35, 83, .06); }
-.attn.has-bad { border-top-color: var(--bad); }
-.attn.clear { border-top-color: var(--good); }
-.attn-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.attn-head h2 { margin: 0; display: flex; align-items: center; gap: 8px; }
-.attn-n { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px; background: var(--warn); color: #fff; font: 800 16px/1 var(--font-display); }
-.attn.has-bad .attn-n { background: var(--bad); }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; }
-.chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
-.chip.bad { background: var(--bad-soft); color: var(--bad); } .chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.info { background: var(--accent-soft); color: var(--accent); }
-.attn .alert { cursor: default; }
-.attn .alert[data-action] { cursor: pointer; }
-.attn .alert.bad { background: var(--bad-soft); border-color: transparent; border-left-color: var(--bad); }
-.attn .alert .ico { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 800 13px/1 var(--font-display); color: #fff; background: var(--warn); margin-top: 1px; }
-.attn .alert.bad .ico { background: var(--bad); }
-.attn .alert .go { margin-left: auto; color: var(--muted); font-size: 20px; line-height: 1; align-self: center; }
-.attn .group { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 6px; }
+/* Needs attention: a navy brand panel so it stands apart from the white cards */
+.attn { --attn-bg: linear-gradient(135deg, #022353 0%, #0A3A6B 100%); background: var(--attn-bg); color: #fff; border-radius: 16px; padding: 20px 18px; margin: 0 0 22px; box-shadow: 0 6px 20px rgba(2, 35, 83, .22); border: 0; border-top: 6px solid #F2A93B; }
+.attn.has-bad { border-top-color: #FF5A4E; }
+.attn.clear { border-top-color: var(--brand-green); }
+.attn-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.attn-head h2 { margin: 0; display: flex; align-items: center; gap: 12px; color: #fff; font-size: 26px; line-height: 1.15; }
+.attn-n { display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 48px; padding: 0 10px; border-radius: 24px; background: #F2A93B; color: #022353; font: 800 24px/1 var(--font-display); }
+.attn.has-bad .attn-n { background: #FF5A4E; color: #fff; }
+.attn .sub-lead { color: rgba(255,255,255,.78); font-size: 14px; margin: -6px 0 12px; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.chip { font-size: 13px; font-weight: 700; padding: 5px 11px; border-radius: 999px; }
+.attn .chip.bad { background: #FF5A4E; color: #fff; } .attn .chip.warn { background: #F2A93B; color: #022353; } .attn .chip.info { background: var(--brand-green); color: #022353; }
+.attn .group { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; color: rgba(255,255,255,.75); margin: 16px 0 8px; }
 .attn .group:first-of-type { margin-top: 0; }
-.attn .more { margin-top: 8px; }
-.attn .approvals { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.attn .alerts { gap: 8px; }
+.attn .alert { background: #fff; color: #022353; border: 0; border-left: 6px solid #F2A93B; border-radius: 10px; padding: 14px 14px; gap: 12px; align-items: center; cursor: default; }
+.attn .alert[data-action] { cursor: pointer; }
+.attn .alert[data-action]:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,.18); }
+.attn .alert.bad { background: #FFF1EF; border-left-color: #E5352B; }
+.attn .alert .what { font-size: 16px; font-weight: 700; color: #022353; }
+.attn .alert .why { font-size: 13.5px; color: #4A5A73; margin-top: 2px; }
+.attn .alert .ico { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 800 15px/1 var(--font-display); color: #022353; background: #F2A93B; }
+.attn .alert.bad .ico { background: #E5352B; color: #fff; }
+.attn .alert .go { margin-left: auto; color: #8090A8; font-size: 24px; line-height: 1; }
+.attn .more { margin-top: 12px; background: transparent; color: #fff; border-color: rgba(255,255,255,.45); }
+.attn .approvals { background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 12px; padding: 12px; margin-bottom: 4px; }
+.attn .approvals h3 { margin-top: 0; color: #fff; }
+.attn .approvals .muted { color: rgba(255,255,255,.75); }
+.attn .approvals .li { background: #fff; color: #022353; border-radius: 10px; }
+.attn .approvals .li .muted { color: #4A5A73; }
 .attn .approvals .num { white-space: nowrap; }
-.attn .approvals h3 { margin-top: 0; }
+.attn.clear .clear-msg { color: rgba(255,255,255,.85); font-size: 15px; }
+.attn .pill { background: var(--brand-green); color: #022353; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .attn { --attn-bg: linear-gradient(135deg, #10305E 0%, #154A82 100%); box-shadow: 0 6px 20px rgba(0,0,0,.4); } }
+:root[data-theme="dark"] .attn { --attn-bg: linear-gradient(135deg, #10305E 0%, #154A82 100%); }
+@media (max-width: 520px) { .attn { padding: 16px 14px; margin-left: -4px; margin-right: -4px; } .attn-head h2 { font-size: 22px; } .attn-n { min-width: 42px; height: 42px; font-size: 21px; } }
 .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); }
 .alert.bad { border-left-color: var(--bad); }
 .alert .what { font-weight: 600; }
@@ -959,13 +973,14 @@ function attentionPanel(c) {
   const bad = c.alerts.filter(a => a.sev === "bad"), warn = c.alerts.filter(a => a.sev !== "bad");
   const pend = S.mode === "staff" ? pendingFor(S.fleet) : [];
   const total = c.alerts.length + pend.length;
-  if (!total) return `<div class="attn clear"><div class="attn-head"><h2>Needs attention</h2>${pill("good", "All clear")}</div><div class="small muted">Every driver is up to date, every document is current and nothing is waiting for approval.</div></div>`;
+  if (!total) return `<div class="attn clear"><div class="attn-head"><h2>Needs attention</h2>${pill("good", "All clear")}</div><div class="clear-msg">Every driver is up to date, every document is current and nothing is waiting for approval.</div></div>`;
   const row = a => `<div class="alert ${a.sev}" ${a.link ? `data-action="open" data-v="${a.link}" role="button" tabindex="0"` : ""}><span class="ico" aria-hidden="true">!</span><div><div class="what">${esc(a.what)}</div><div class="why">${esc(a.why)}</div></div>${a.link ? `<span class="go" aria-hidden="true">›</span>` : ""}</div>`;
   const limit = S.showAllAlerts ? 999 : 6;
   const shownBad = bad.slice(0, limit), shownWarn = warn.slice(0, Math.max(0, limit - shownBad.length));
   const hidden = c.alerts.length - shownBad.length - shownWarn.length;
   return `<div class="attn${bad.length ? " has-bad" : ""}">
-    <div class="attn-head"><h2><span class="attn-n">${total}</span>Needs attention</h2><div class="chips">${bad.length ? `<span class="chip bad">${bad.length} urgent</span>` : ""}${warn.length ? `<span class="chip warn">${warn.length} to watch</span>` : ""}${pend.length ? `<span class="chip info">${pend.length} to approve</span>` : ""}</div></div>
+    <div class="attn-head"><h2><span class="attn-n">${total}</span>Needs attention</h2></div>
+    <div class="chips" style="margin:-4px 0 14px">${bad.length ? `<span class="chip bad">${bad.length} urgent</span>` : ""}${warn.length ? `<span class="chip warn">${warn.length} to watch</span>` : ""}${pend.length ? `<span class="chip info">${pend.length} to approve</span>` : ""}</div>
     ${pend.length ? `<div class="approvals">${approvalsCard().replace('class="card" style="border-left:4px solid var(--warn)"', 'class=""')}</div>` : ""}
     ${shownBad.length ? `<div class="group">Urgent</div><div class="alerts">${shownBad.map(row).join("")}</div>` : ""}
     ${shownWarn.length ? `<div class="group">To watch</div><div class="alerts">${shownWarn.map(row).join("")}</div>` : ""}
