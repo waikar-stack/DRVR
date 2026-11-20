@@ -130,6 +130,28 @@ nav.tabs a.on { color: var(--accent); }
 .pill.neutral { background: var(--accent-soft); color: var(--accent); }
 
 .alerts { display: flex; flex-direction: column; gap: 6px; }
+.attn { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin: 0 0 18px; border-top: 5px solid var(--warn); box-shadow: 0 1px 3px rgba(2, 35, 83, .06); }
+.attn.has-bad { border-top-color: var(--bad); }
+.attn.clear { border-top-color: var(--good); }
+.attn-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.attn-head h2 { margin: 0; display: flex; align-items: center; gap: 8px; }
+.attn-n { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 8px; border-radius: 15px; background: var(--warn); color: #fff; font: 800 16px/1 var(--font-display); }
+.attn.has-bad .attn-n { background: var(--bad); }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; }
+.chip.bad { background: var(--bad-soft); color: var(--bad); } .chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.info { background: var(--accent-soft); color: var(--accent); }
+.attn .alert { cursor: default; }
+.attn .alert[data-action] { cursor: pointer; }
+.attn .alert.bad { background: var(--bad-soft); border-color: transparent; border-left-color: var(--bad); }
+.attn .alert .ico { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 800 13px/1 var(--font-display); color: #fff; background: var(--warn); margin-top: 1px; }
+.attn .alert.bad .ico { background: var(--bad); }
+.attn .alert .go { margin-left: auto; color: var(--muted); font-size: 20px; line-height: 1; align-self: center; }
+.attn .group { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 6px; }
+.attn .group:first-of-type { margin-top: 0; }
+.attn .more { margin-top: 8px; }
+.attn .approvals { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+.attn .approvals .num { white-space: nowrap; }
+.attn .approvals h3 { margin-top: 0; }
 .alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--warn); }
 .alert.bad { border-left-color: var(--bad); }
 .alert .what { font-weight: 600; }
@@ -929,18 +951,33 @@ function onboarding() {
 }
 
 function viewHome(c) {
-  const ap = approvalsCard() + incidentsCard();
+  const ap = "";
   if (!S.cars.length || !S.drivers.length || !S.assigns.length) return ap + (S.role === "owner" ? `<div class="card empty"><h2>Your fleet is being set up</h2><p>Your manager is adding your cars and drivers. They'll show here as soon as they're saved.</p></div>` : onboarding());
   return ap + viewHomeMain(c);
+}
+function attentionPanel(c) {
+  const bad = c.alerts.filter(a => a.sev === "bad"), warn = c.alerts.filter(a => a.sev !== "bad");
+  const pend = S.mode === "staff" ? pendingFor(S.fleet) : [];
+  const total = c.alerts.length + pend.length;
+  if (!total) return `<div class="attn clear"><div class="attn-head"><h2>Needs attention</h2>${pill("good", "All clear")}</div><div class="small muted">Every driver is up to date, every document is current and nothing is waiting for approval.</div></div>`;
+  const row = a => `<div class="alert ${a.sev}" ${a.link ? `data-action="open" data-v="${a.link}" role="button" tabindex="0"` : ""}><span class="ico" aria-hidden="true">!</span><div><div class="what">${esc(a.what)}</div><div class="why">${esc(a.why)}</div></div>${a.link ? `<span class="go" aria-hidden="true">›</span>` : ""}</div>`;
+  const limit = S.showAllAlerts ? 999 : 6;
+  const shownBad = bad.slice(0, limit), shownWarn = warn.slice(0, Math.max(0, limit - shownBad.length));
+  const hidden = c.alerts.length - shownBad.length - shownWarn.length;
+  return `<div class="attn${bad.length ? " has-bad" : ""}">
+    <div class="attn-head"><h2><span class="attn-n">${total}</span>Needs attention</h2><div class="chips">${bad.length ? `<span class="chip bad">${bad.length} urgent</span>` : ""}${warn.length ? `<span class="chip warn">${warn.length} to watch</span>` : ""}${pend.length ? `<span class="chip info">${pend.length} to approve</span>` : ""}</div></div>
+    ${pend.length ? `<div class="approvals">${approvalsCard().replace('class="card" style="border-left:4px solid var(--warn)"', 'class=""')}</div>` : ""}
+    ${shownBad.length ? `<div class="group">Urgent</div><div class="alerts">${shownBad.map(row).join("")}</div>` : ""}
+    ${shownWarn.length ? `<div class="group">To watch</div><div class="alerts">${shownWarn.map(row).join("")}</div>` : ""}
+    ${hidden > 0 ? `<button class="btn sm more" data-action="alerts-all">Show all ${c.alerts.length}</button>` : S.showAllAlerts && c.alerts.length > 6 ? `<button class="btn sm more" data-action="alerts-all">Show fewer</button>` : ""}
+  </div>`;
 }
 function viewHomeMain(c) {
   const t = c.tot;
   const dueToday = c.todayRows.reduce((s, r) => s + r.due, 0), paidToday = c.todayRows.reduce((s, r) => s + r.paid, 0);
-  const collRate = t.exp ? t.rev / (t.exp + t.charges) : NaN;
-  const util = t.denom ? t.earn / t.denom : NaN;
-  const margin = t.rev ? t.net / t.rev : NaN;
   const owing = c.drivers.filter(d => d.balance > 1).sort((a, b) => b.balance - a.balance);
   return `
+  ${attentionPanel(c)}
   <div class="section">
     <div class="section-head"><h2>Today</h2><span class="small muted">${fmtDate(c.T)} · ${DAYS[weekday(c.T)]}</span></div>
     <div class="grid kpis">
@@ -950,28 +987,10 @@ function viewHomeMain(c) {
     </div>
   </div>
   <div class="section">
-    <div class="section-head"><h2>Needs attention</h2><span class="small muted">${c.alerts.length} item${c.alerts.length === 1 ? "" : "s"}</span></div>
-    ${c.alerts.length ? `<div class="alerts">${c.alerts.slice(0, 8).map(a => `<div class="alert ${a.sev}" ${a.link ? `data-action="open" data-v="${a.link}" style="cursor:pointer"` : ""}><div><div class="what">${esc(a.what)}</div><div class="why">${esc(a.why)}</div></div></div>`).join("")}${c.alerts.length > 8 ? `<div class="small muted">and ${c.alerts.length - 8} more on the Cars and Drivers pages</div>` : ""}</div>` : `<div class="card small muted">Nothing needs attention. Every driver is up to date and every document is current.</div>`}
-  </div>
-  <div class="section">
-    <div class="section-head"><h2>Performance</h2>${periodSeg()}</div>
-    <div class="grid kpis">
-      <div class="card kpi"><div class="label">Collected</div><div class="value num">${ksh(t.rev)}</div><div class="sub">${pct(collRate)} of ${ksh(t.exp + t.charges)} expected</div></div>
-      <div class="card kpi"><div class="label">Owner costs</div><div class="value num">${ksh(t.cost)}</div><div class="sub">Service, repairs, insurance, etc.</div></div>
-      <div class="card kpi"><div class="label">Net profit</div><div class="value num" style="color:${t.net < 0 ? "var(--bad)" : "var(--ink)"}">${ksh(t.net)}</div><div class="sub">${pct(margin)} margin</div></div>
-      <div class="card kpi"><div class="label">Utilisation</div><div class="value num">${pct(util)}</div><div class="sub">${t.earn} of ${t.denom} working car-days</div><div class="meter"><i style="width:${isFinite(util) ? util * 100 : 0}%"></i></div></div>
-    </div>
-    <div class="small muted">${esc(c.P.label)}. Expected income counts each driver's daily rate, minus rest days and days the car was off the road for reasons that were not the driver's fault.</div>
-  </div>
-  ${trendChart(c.trend)}
-  <div class="section">
-    <div class="section-head"><h2>Profit by car</h2><span class="small muted">${esc(c.P.label)}</span></div>
-    ${carTable(c.cars)}
-  </div>
-  <div class="section">
     <div class="section-head"><h2>Driver balances</h2><a class="small" href="#drivers">All drivers</a></div>
     ${driverList(c.drivers.filter(d => d.assign || d.balance > 1).sort((a, b) => b.balance - a.balance))}
-  </div>`;
+  </div>
+  <a class="card small" href="#insights" style="display:block;text-decoration:none;color:inherit">Monthly collections, profit, utilisation and profit by car are in <b>Insights</b> ›</a>`;
 }
 
 function trendChart(tr) {
@@ -1742,7 +1761,15 @@ function insBusiness(c) {
 
   return `
   <div class="section">
-    <div class="section-head"><h2>Key findings</h2>${periodSeg()}</div>
+    <div class="section-head"><h2>Summary</h2>${periodSeg()}</div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Collected</div><div class="value num">${ksh(t.rev)}</div><div class="sub">${pct(collRate)} of ${ksh(t.exp + t.charges)} expected</div></div>
+      <div class="card kpi"><div class="label">Owner costs</div><div class="value num">${ksh(t.cost)}</div><div class="sub">Service, repairs, insurance, etc.</div></div>
+      <div class="card kpi"><div class="label">Net profit</div><div class="value num" style="color:${t.net < 0 ? "var(--bad)" : "var(--ink)"}">${ksh(t.net)}</div><div class="sub">${pct(t.rev ? t.net / t.rev : NaN)} margin</div></div>
+      <div class="card kpi"><div class="label">Utilisation</div><div class="value num">${pct(t.denom ? t.earn / t.denom : NaN)}</div><div class="sub">${t.earn} of ${t.denom} working car-days</div><div class="meter"><i style="width:${t.denom ? t.earn / t.denom * 100 : 0}%"></i></div></div>
+    </div>
+    <div class="small muted" style="margin-bottom:14px">${esc(c.P.label)}. Expected income counts each driver's daily rate, minus rest days and days the car was off the road for reasons that were not the driver's fault.</div>
+    <div class="section-head"><h2>Key findings</h2></div>
     <div class="card">${F.length ? `<ul class="findings">${F.map(x => `<li>${x}</li>`).join("")}</ul>` : `<div class="small muted">Record a few weeks of payments and expenses to see findings here.</div>`}</div>
     <div class="grid kpis">
       <div class="card kpi"><div class="label">Collection rate</div><div class="value num" style="color:${collRate < 0.9 ? "var(--bad)" : "var(--ink)"}">${pct(collRate)}</div><div class="sub">of expected payments</div></div>
@@ -1754,6 +1781,7 @@ function insBusiness(c) {
   ${monthChart(months)}
   <div class="section"><div class="section-head"><h2>Cars ranked</h2><span class="small muted">Net profit per working day</span></div>
     <div class="card">${hbars(carRows.map(({ x, perDay }) => ({ label: plate(x.plate), v: perDay, color: perDay < 0 ? "var(--bad)" : "var(--good)", sub: `${pct(x.util)} on road`, link: "car:" + x.id })), v => ksh(v))}</div></div>
+  <div class="section"><div class="section-head"><h2>Profit by car</h2><span class="small muted">${esc(c.P.label)}</span></div>${carTable(c.cars)}</div>
   <div class="section"><div class="section-head"><h2>Where owner money goes</h2><span class="small muted">${ksh(t.cost)} total</span></div>
     <div class="card">${hbars(catRows.map(([k, v]) => ({ label: esc(k), v, color: "var(--series-2)", sub: t.cost ? pct(v / t.cost) : "" })), v => ksh(v))}</div></div>
   <div class="section"><div class="section-head"><h2>Off-road days</h2><span class="small muted">Income lost by reason</span></div>
@@ -2658,6 +2686,7 @@ document.addEventListener("click", async e => {
     case "period": S.period = v; render(); break;
     case "more-tab": S.moreTab = v; if (location.hash !== "#more") location.hash = "more"; else render(); break;
     case "ins-tab": S.insTab = v; render(); break;
+    case "alerts-all": S.showAllAlerts = !S.showAllAlerts; render(); break;
     case "go": S.detail = null; location.hash = v; break;
     case "back": S.detail = null; render(); break;
     case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
