@@ -254,6 +254,14 @@ pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(-
 .member { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .member:last-child { border-bottom: 0; }
 .member select { width: auto; }
+.svc-lines { display: flex; flex-direction: column; gap: 8px; }
+.svc-line { display: grid; grid-template-columns: 1fr 120px; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.svc-line .full { grid-column: 1 / -1; }
+.svc-line .nums { grid-column: 1 / -1; display: grid; grid-template-columns: 70px 1fr 1fr auto; gap: 6px; align-items: center; }
+.svc-line input, .svc-line select { width: 100%; min-width: 0; font-size: 14px; }
+.svc-line .lt { font-weight: 800; text-align: right; font-variant-numeric: tabular-nums; }
+.svc-total { display: flex; justify-content: space-between; font-weight: 800; font-size: 18px; padding: 10px 2px; border-top: 2px solid var(--line); margin-top: 8px; }
+.quick-lines { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 @media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } }
 .insp-sec { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); margin: 0 0 10px; }
@@ -409,7 +417,7 @@ const S = {
   db: null, raw: null, user: null, canWrite: true,
   role: null, fleet: null, fleets: [], fleetsReady: false, subsBy: {}, subWatch: {}, mySubs: [], ownerState: "loading", fleetMeta: null,
   mode: "loading", org: null, orgName: "", orgs: [], staffRole: null, canManage: false, isAdmin: false, accessRole: null, myAccess: [],
-  waiting: new Set(), recordsReady: false, inspections: [], stockItems: [], stockMoves: [], fleetCars: {}, perfKind: "cars", perfMetric: "score", stockQ: "", contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
+  waiting: new Set(), recordsReady: false, services: [], inspections: [], stockItems: [], stockMoves: [], fleetCars: {}, perfKind: "cars", perfMetric: "score", stockQ: "", contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
   cars: [], drivers: [], assigns: [], settings: { ...DEFAULT_SETTINGS },
   months: {},          // "YYYY-MM" -> {payments:[], expenses:[], downtime:[], odo:[]}
   loadedMonths: new Set(), subs: [], coreReady: { cars: false, drivers: false, assigns: false, settings: false },
@@ -532,7 +540,10 @@ function compute() {
     cs[c.id].kmP = kmP;
     const svc = all("expenses").filter(x => x.carId === c.id && x.category === "Service" && x.odometer).map(x => Number(x.odometer));
     const lastService = Math.max(Number(c.lastServiceKm) || 0, ...svc, 0);
-    odoInfo[c.id] = { lastKm: last ? last.km : null, lastDate: last ? last.date : null, lastService };
+    // a service visit can set its own "next service at" km; otherwise use the car's or fleet's interval
+    const baseIv = Number(c.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000;
+    const sv = (S.services || []).filter(x => x.carId === c.id && Number(x.odometer) === lastService && Number(x.nextKm) > lastService).sort((a, b) => b.date.localeCompare(a.date))[0];
+    odoInfo[c.id] = { lastKm: last ? last.km : null, lastDate: last ? last.date : null, lastService, iv: sv ? Number(sv.nextKm) - lastService : baseIv };
   }
 
   // Driver balances
@@ -636,7 +647,7 @@ function compute() {
     docCheck(c.inspectionExpiry, "NTSA inspection", c.plate, "car:" + c.id);
     docCheck(c.tncExpiry, "PSV / platform licence", c.plate, "car:" + c.id);
     docCheck(c.trackerExpiry, "Tracker subscription", c.plate, "car:" + c.id);
-    const iv = Number(c.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000;
+    const iv = c.odo.iv;
     if (c.odo.lastKm != null && c.odo.lastService) {
       const since = c.odo.lastKm - c.odo.lastService, left = iv - since;
       if (left <= (Number(S.settings.serviceWarnKm) || 500)) alerts.push({ sev: left < 0 ? "bad" : "warn", what: left < 0 ? `Service overdue by ${Math.abs(left).toLocaleString()} km` : `Service due in ${left.toLocaleString()} km`, why: `${c.plate} · ${c.odo.lastKm.toLocaleString()} km now, last service at ${c.odo.lastService.toLocaleString()} km`, link: "car:" + c.id, sort: left / 100 });
@@ -733,7 +744,7 @@ function resetFleetState() {
   S.subs = []; S.cars = []; S.drivers = []; S.assigns = []; S.settings = { ...DEFAULT_SETTINGS };
   S.months = {}; S.loadedMonths = new Set(); S.coreReady = { cars: false, drivers: false, assigns: false, settings: false };
   S.act = {}; S.vis = {}; S.actLoaded = false; S.detail = null; S.calc = null; S._sumKey = null; S.incidents = [];
-  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null; S.contracts = []; S.priv = {}; S.inspections = [];
+  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null; S.contracts = []; S.priv = {}; S.inspections = []; S.services = [];
 }
 
 function loadFleet() {
@@ -751,6 +762,7 @@ function loadFleet() {
   core("assigns", "assignments", "assigns");
   // Incidents load alongside, without holding up the first screen
   S.subs.push(S.db.collection("incidents").onSnapshot(snap => { S.incidents = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
+  S.subs.push(S.db.collection("services").onSnapshot(snap => { S.services = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
   S.subs.push(S.db.collection("inspections").onSnapshot(snap => { S.inspections = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
   if (S.mode === "staff") S.subs.push(S.db.collection("contracts").onSnapshot(snap => { S.contracts = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
   S.subs.push(S.db.doc("settings/main").onSnapshot(snap => {
@@ -1187,7 +1199,7 @@ function recordList(kind, rows) {
   if (!rows.length) return `<div class="card empty">Nothing recorded yet.</div>`;
   const line = r => {
     if (kind === "payments") return [`${esc(driverName(r.driverId))} ${r.carId ? plate(carLabel(r.carId)) : ""}`, `${fmtDate(r.date)} · ${esc(r.method || "")}${r.ref ? " · " + esc(r.ref) : ""}`, ksh(r.amount)];
-    if (kind === "expenses") return [`${esc(r.category)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.date)}${r.vendor ? " · " + esc(r.vendor) : ""}${r.incidentId ? " · incident" : ""}${r.chargeDriver ? " · charged to " + esc(driverName(r.driverId)) : r.driverPaid ? " · paid by " + esc(driverName(r.driverId)) + ", deducted from what they owe" : ""}${r.note ? " · " + esc(r.note) : ""}`, ksh(r.amount)];
+    if (kind === "expenses") return [`${esc(r.category)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.date)}${r.vendor ? " · " + esc(r.vendor) : ""}${r.incidentId ? " · incident" : ""}${r.serviceId ? " · service visit" : ""}${r.chargeDriver ? " · charged to " + esc(driverName(r.driverId)) : r.driverPaid ? " · paid by " + esc(driverName(r.driverId)) + ", deducted from what they owe" : ""}${r.note ? " · " + esc(r.note) : ""}`, ksh(r.amount)];
     if (kind === "downtime") return [`${esc(r.reason)} ${plate(carLabel(r.carId))}`, `${fmtDate(r.from)} → ${r.to ? fmtDate(r.to) : "still off road"}${r.excused === false ? " · driver still owes" : " · driver not charged"}${r.note ? " · " + esc(r.note) : ""}`, `${dayDiff(r.from, r.to || todayStr()) + 1} day(s)`];
     return [`${plate(carLabel(r.carId))}`, fmtDate(r.date), `${Number(r.km).toLocaleString()} km`];
   };
@@ -1216,7 +1228,7 @@ function carDetail(c, id) {
     <div><span>Lifetime net profit</span><b>${ksh(car.netAll)}</b></div>
     <div><span>Paid back</span><b>${isFinite(car.payback) ? pct(car.payback) : "—"}</b></div>
     <div><span>Odometer</span><b>${car.odo.lastKm != null ? car.odo.lastKm.toLocaleString() + " km" : "—"}</b></div>
-    <div><span>Next service at</span><b>${car.odo.lastService ? (car.odo.lastService + iv).toLocaleString() + " km" : "—"}</b></div>
+    <div><span>Next service at</span><b>${car.odo.lastService ? (car.odo.lastService + car.odo.iv).toLocaleString() + " km" : "—"}</b></div>
     ${doc("Insurance expires", car.insuranceExpiry)}${doc("NTSA inspection", car.inspectionExpiry)}${doc("PSV / platform licence", car.tncExpiry)}${doc("Tracker paid to", car.trackerExpiry)}
   </div></div>
   <div class="section-head"><h3>${esc(S.calc.P.label)}</h3>${periodSeg()}</div>
@@ -1228,7 +1240,7 @@ function carDetail(c, id) {
   </div>
   <h3>Driver history</h3>
   <div class="list">${hist.map(a => `<div class="li"><div class="main"><div class="t">${esc(driverName(a.driverId))}</div><div class="small muted">${fmtDate(a.start)} → ${a.end ? fmtDate(a.end) : "now"} · ${ksh(a.rate)}/day · rest day ${a.restDay === "" || a.restDay == null ? "none" : DAYS[a.restDay]}</div></div>${S.canWrite ? `<div class="end"><button class="btn sm" data-action="edit-assign" data-v="${a.id}">Edit</button></div>` : ""}</div>`).join("") || `<div class="empty">No drivers assigned yet.</div>`}</div>
-  ${inspCard(id)}
+  ${serviceCard(id)}
   ${incSection((S.incidents || []).filter(i => i.carId === id))}
   <h3>Recent expenses</h3>${recordList("expenses", recs("expenses"))}
   <h3>Off-road days</h3>${recordList("downtime", recs("downtime"))}
@@ -1383,7 +1395,7 @@ function viewMore() {
   const recent = k => all(k).sort((a, b) => (b.date || b.from).localeCompare(a.date || a.from)).slice(0, 20);
   const tab = S.moreTab || "expenses";
   if ((S.moreTab || "expenses") === "incidents") return viewIncidents();
-  if ((S.moreTab || "expenses") === "inspections") return viewInspections();
+  if ((S.moreTab || "expenses") === "inspections") return viewServiceTab();
   if ((S.moreTab || "expenses") === "contracts") { if (S.mode === "staff") return viewContracts(); S.moreTab = "expenses"; }
   const tabs = REC_TABS();
   const addAction = { expenses: "new-expense", downtime: "new-downtime", odo: "new-odo", payments: "new-payment" }[tab];
@@ -2063,7 +2075,7 @@ function saveStatements(c) {
     S._stmt = S._stmt || {};
     for (const d of S.calc.drivers) {
       const car = d.assign ? S.calc.cars.find(x => x.id === d.assign.carId) : null;
-      const iv = car ? Number(car.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000 : 0;
+      const iv = car ? car.odo.iv : 0;
       const service = car ? { lastKm: car.odo.lastKm, lastDate: car.odo.lastDate || "", lastService: car.odo.lastService || 0, interval: iv, next: car.odo.lastService ? car.odo.lastService + iv : null, left: car.odo.lastKm != null && car.odo.lastService ? car.odo.lastService + iv - car.odo.lastKm : null, warnKm: Number(S.settings.serviceWarnKm) || 500 } : null;
       const recent = all("payments").filter(p => p.driverId === d.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 6).map(p => ({ date: p.date, amount: Number(p.amount) || 0, ref: p.ref || "" }));
       const body = { name: d.name || "", balance: Math.round(Number(d.balance) || 0), daysBehind: Math.round((Number(d.daysBehind) || 0) * 10) / 10, rate: Number(d.rate) || 0, car: d.assign ? carLabel(d.assign.carId) : "", carId: d.assign ? d.assign.carId : "", carName: car ? [car.make, car.model].filter(Boolean).join(" ") : "",
@@ -2807,7 +2819,7 @@ async function incidentPdf(id) {
 }
 
 /* ============ Driver private details & contracts ============ */
-const REC_TABS = () => [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"], ["inspections", "Inspections"], ...(S.mode === "staff" ? [["contracts", "Contracts"]] : [])];
+const REC_TABS = () => [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"], ["inspections", "Service"], ...(S.mode === "staff" ? [["contracts", "Contracts"]] : [])];
 async function loadPrivate(id) {
   if (S.priv[id] !== undefined || S.mode !== "staff") return S.priv[id];
   S.priv[id] = null;
@@ -3544,6 +3556,179 @@ function openItem(id) {
     <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? (x.packs && x.packSize > 1 ? `Received ${fmtQty(x.packs)} × ${fmtQty(x.packSize)} ${esc(it.unit || "")}` : "Received") : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : x.type === "price" ? "Price changed" : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "price" ? "" : (x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : "") + fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost * 100) / 100)} per ${esc(unitWord(it))}</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
 }
 
+/* ============ Service visits ============ */
+// A visit: odometer, garage and each item done or changed with its cost. The costs are saved as expenses
+// (one per category), so car profit, insights and the service reminder all use them.
+const SVC_TYPES = [["service", "Service"], ["repair", "Repair"], ["tyres", "Tyres"], ["inspection", "Inspection only"], ["other", "Other"]];
+const SVC_CATS = [["Service", "Service (oil, filters, labour)"], ["Repairs & parts", "Repairs & parts"], ["Tyres", "Tyres"], ["Inspection & licences", "Inspection fee"]];
+const QUICK_LINES = [["Engine oil", "Service", "litres"], ["Oil filter", "Service"], ["Air filter", "Service"], ["Cabin filter", "Service"], ["Spark plugs", "Service"], ["Brake pads", "Repairs & parts"], ["Wiper blade", "Repairs & parts"], ["Labour", "Service"], ["Inspection", "Inspection & licences"]];
+const svcById = id => (S.services || []).find(x => x.id === id);
+function serviceCard(carId) {
+  const sv = (S.services || []).filter(x => x.carId === carId);
+  const ins = (S.inspections || []).filter(x => x.carId === carId && !x.serviceId);
+  const rows = [...sv.map(x => ({ d: x.date, h: svcRow(x) })), ...ins.map(x => ({ d: x.date, h: inspRow(x) }))].sort((a, b) => b.d.localeCompare(a.d));
+  const car = S.calc ? S.calc.cars.find(c => c.id === carId) : null, o = car && car.odo;
+  const iv = o ? o.iv : 0;
+  const next = o && o.lastService ? o.lastService + iv : null, left = next != null && o.lastKm != null ? next - o.lastKm : null;
+  if (!rows.length && !S.canWrite) return "";
+  return `<div class="card"><div class="section-head" style="margin:0 0 6px"><h3 style="margin:0">Service &amp; inspections</h3>${S.canWrite ? `<div class="row-actions"><button class="btn sm primary" data-action="sv-new" data-v="${esc(carId)}">Record service</button><button class="btn sm" data-action="in-new" data-v="${esc(carId)}">Inspection only</button></div>` : ""}</div>
+    ${next ? `<p class="small" style="margin:0 0 8px">Next service at <b>${next.toLocaleString()} km</b>${left != null ? ` · ${left < 0 ? `<b style="color:var(--bad)">overdue by ${Math.abs(left).toLocaleString()} km</b>` : left.toLocaleString() + " km to go"}` : ""}</p>` : ""}
+    ${rows.length ? `<div class="list">${rows.slice(0, 6).map(r => r.h).join("")}</div>` : `<p class="small muted" style="margin:0">No service visits recorded yet.</p>`}</div>`;
+}
+function svcRow(x) {
+  const ins = x.inspectionId ? inspById(x.inspectionId) : null, c = ins ? inspCounts(ins) : null;
+  const type = (SVC_TYPES.find(t => t[0] === x.type) || SVC_TYPES[0])[1];
+  return `<div class="li" data-action="sv-open" data-v="${esc(x.id)}" style="cursor:pointer"><div class="main"><div class="t">${type} ${plate(carLabel(x.carId))}</div><div class="small muted">${fmtDate(x.date)}${x.odometer ? " · " + Number(x.odometer).toLocaleString() + " km" : ""}${x.garage ? " · " + esc(x.garage) : ""}${(x.lines || []).length ? " · " + x.lines.length + " item" + (x.lines.length === 1 ? "" : "s") : ""}</div></div><div class="end"><b class="num">${ksh(x.total || 0)}</b><div>${c ? (c.open ? pill("bad", c.open + " now") : c.soon ? pill("warn", c.soon + " soon") : pill("good", "Inspected")) : ""}</div></div></div>`;
+}
+function viewServiceTab() {
+  const tabs = REC_TABS();
+  const T = todayStr(), every = Number(S.settings.inspectEveryDays) || 90;
+  const live = S.cars.filter(c => !(c.soldDate && c.soldDate <= T));
+  const rows = [...(S.services || []).map(x => ({ d: x.date, h: svcRow(x) })), ...(S.inspections || []).filter(x => !x.serviceId).map(x => ({ d: x.date, h: inspRow(x) }))].sort((a, b) => b.d.localeCompare(a.d));
+  const P = S.calc ? S.calc.P : periodRange(S.period), inP = d => d >= P.from && d <= P.to;
+  const spent = (S.services || []).filter(x => inP(x.date)).reduce((t, x) => t + (Number(x.total) || 0), 0);
+  const due = S.calc ? S.calc.cars.filter(c => !(c.soldDate && c.soldDate <= T) && c.odo && c.odo.lastService && c.odo.lastKm != null && (c.odo.lastService + c.odo.iv) - c.odo.lastKm <= (Number(S.settings.serviceWarnKm) || 500)) : [];
+  return `<div class="section"><div class="section-head"><h2>Records</h2></div>
+  <div class="section-head"><div class="seg">${tabs.map(([k, l]) => `<button data-action="more-tab" data-v="${k}" class="${k === "inspections" ? "on" : ""}">${l}</button>`).join("")}</div></div>
+  <div class="grid kpis" style="margin-bottom:12px">
+    <div class="card kpi"><div class="label">Spent on service</div><div class="value num">${ksh(spent)}</div><div class="sub">${esc(P.label || "")}</div></div>
+    <div class="card kpi"><div class="label">Cars due for service</div><div class="value num" style="color:${due.length ? "var(--warn)" : "inherit"}">${due.length}</div><div class="sub">${due.map(c => esc(c.plate)).join(", ") || "None"}</div></div>
+  </div>
+  ${S.canWrite && live.length ? `<div class="card"><h3 style="margin-top:0">Record a service</h3><div class="row-actions">${live.map(c => `<button class="btn sm" data-action="sv-new" data-v="${esc(c.id)}">${esc(c.plate)}</button>`).join("")}</div><p class="small muted" style="margin:8px 0 0">Inspection without a service? Open the car and tap <b>Inspection only</b>.</p></div>` : ""}
+  ${rows.length ? `<div class="list">${rows.map(r => r.h).join("")}</div>` : `<div class="card empty small">No service visits yet.</div>`}</div>`;
+}
+
+// ---- Form ----
+function svcLineHtml(l) {
+  l = l || {};
+  return `<div class="svc-line">
+    <input class="full" data-f="desc" placeholder="What was done or changed, e.g. Oil filter" value="${esc(l.desc || "")}">
+    <select class="full" data-f="cat">${SVC_CATS.map(([v, t]) => `<option value="${esc(v)}"${(l.cat || "Service") === v ? " selected" : ""}>${esc(t)}</option>`).join("")}</select>
+    <div class="nums small muted" style="margin-bottom:-4px"><span>Qty</span><span>Unit</span><span>Price each</span><span></span></div>
+    <div class="nums"><input data-f="qty" type="number" step="any" inputmode="decimal" value="${esc(l.qty ?? 1)}" aria-label="Quantity"><input data-f="unit" placeholder="${esc(l.unitName || "each")}" value="${esc(l.unitName || "")}" aria-label="Unit, e.g. litres"><input data-f="price" type="number" step="any" inputmode="decimal" placeholder="Price each" value="${esc(l.price ?? "")}" aria-label="Price each (KSh)"><button type="button" class="btn sm" data-action="sv-rm" aria-label="Remove line">✕</button></div>
+    <div class="full small muted lt" data-f="lt"></div></div>`;
+}
+function addSvcLine(l) { const box = document.getElementById("svc-lines"); if (!box) return; box.insertAdjacentHTML("beforeend", svcLineHtml(l)); svcTotal(); const last = box.lastElementChild; const d = last && last.querySelector('[data-f="desc"]'); if (d && !d.value) d.focus(); }
+function readLines() {
+  return [...document.querySelectorAll("#svc-lines .svc-line")].map(r => {
+    const g = f => (r.querySelector(`[data-f="${f}"]`) || {}).value || "";
+    const qty = Number(g("qty")) || 0, price = Number(g("price")) || 0;
+    return { desc: g("desc").trim().slice(0, 120), cat: g("cat") || "Service", qty, unitName: g("unit").trim().slice(0, 20), price, amount: Math.round(qty * price * 100) / 100, el: r };
+  });
+}
+function svcTotal() {
+  let t = 0;
+  for (const l of readLines()) { t += l.amount; const lt = l.el.querySelector('[data-f="lt"]'); if (lt) lt.textContent = l.amount ? `${fmtQty(l.qty)}${l.unitName ? " " + l.unitName : ""} × ${ksh(l.price)} = ${ksh(l.amount)}` : ""; }
+  const el = document.getElementById("svc-total"); if (el) el.textContent = ksh(Math.round(t));
+}
+function formService(carId, rec) {
+  const car = carById(carId); if (!car) return;
+  const last = (S.services || []).filter(x => x.carId === carId).sort((a, b) => b.date.localeCompare(a.date))[0];
+  const iv = Number(car.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000;
+  const lastKm = S.calc && (S.calc.cars.find(c => c.id === carId) || {}).odo ? S.calc.cars.find(c => c.id === carId).odo.lastKm : null;
+  S._svcEdit = { carId, id: rec ? rec.id : null };
+  openSheet(rec ? "Edit service" : `Service: ${car.plate}`, `
+    <div class="grid2">
+      <label class="fl">Date<input id="sv-date" type="date" value="${esc(rec ? rec.date : todayStr())}"></label>
+      <label class="fl">Odometer (km)<input id="sv-odo" type="number" step="any" inputmode="decimal" value="${esc(rec ? rec.odometer || "" : "")}" placeholder="${lastKm != null ? "Last: " + lastKm.toLocaleString() : ""}"></label>
+      <label class="fl">Type<select id="sv-type">${SVC_TYPES.map(([v, t]) => `<option value="${v}"${(rec ? rec.type : "service") === v ? " selected" : ""}>${t}</option>`).join("")}</select></label>
+      <label class="fl">Garage<input id="sv-garage" value="${esc(rec ? rec.garage || "" : last ? last.garage || "" : "")}" placeholder="e.g. AutoXpress Embakasi"></label>
+      <label class="fl">Invoice / job card no.<input id="sv-ref" value="${esc(rec ? rec.ref || "" : "")}"></label>
+      <label class="fl">Paid by<select id="sv-paid"><option value="owner"${!rec || rec.paidBy !== "driver" ? " selected" : ""}>Owner / fleet</option><option value="driver"${rec && rec.paidBy === "driver" ? " selected" : ""}>Driver, from their own money</option></select></label>
+    </div>
+    <h3 style="margin:12px 0 6px">What was done or changed</h3>
+    <div class="quick-lines">${QUICK_LINES.map(([d, c, u]) => `<button type="button" class="btn sm" data-action="sv-add" data-v="${esc(JSON.stringify({ desc: d, cat: c, unitName: u || "" }))}">+ ${esc(d)}</button>`).join("")}</div>
+    <div class="svc-lines" id="svc-lines">${(rec && rec.lines && rec.lines.length ? rec.lines : [{}]).map(svcLineHtml).join("")}</div>
+    <button type="button" class="btn sm" style="margin-top:8px" data-action="sv-add">+ Add another line</button>
+    <div class="svc-total"><span>Total</span><span id="svc-total">KSh 0</span></div>
+    <label class="fl">Next service due at (km)<input id="sv-next" type="number" step="any" value="${esc(rec ? rec.nextKm || "" : "")}" placeholder="Leave empty for odometer + ${iv.toLocaleString()} km"></label>
+    <label class="fl">Notes<textarea id="sv-notes" rows="2">${esc(rec ? rec.notes || "" : "")}</textarea></label>
+    ${rec ? "" : `<label class="ck" style="margin:10px 0"><input type="checkbox" id="sv-with-insp"${car && S.inspections.some(x => x.carId === carId) ? " checked" : ""}> The garage also did an inspection (fill it in next)</label>`}
+    <p class="small muted">The total is saved as expenses on ${esc(car.plate)}, split by category. A <b>Service</b> visit with an odometer reading resets the service reminder.</p>
+    <div class="row-actions"><button class="btn primary" data-action="sv-save">Save service</button></div>`);
+  setTimeout(svcTotal, 0);
+}
+async function saveService() {
+  const ed = S._svcEdit; if (!ed) return;
+  const g = id => String((document.getElementById(id) || {}).value || "").trim();
+  const date = g("sv-date") || todayStr(), odometer = Number(g("sv-odo")) || 0, type = g("sv-type") || "service";
+  const lines = readLines().filter(l => l.desc || l.amount).map(({ el, ...l }) => l);
+  if (!lines.length) { toast("Add at least one item with its cost"); return; }
+  if (lines.some(l => !l.desc)) { toast("Describe every line, e.g. Oil filter"); return; }
+  if (type === "service" && !odometer) { toast("Enter the odometer reading. It resets the service reminder."); return; }
+  if (date < trackStart()) { toast("Date is before your tracking start date"); return; }
+  const lastKm = S.calc && (S.calc.cars.find(c => c.id === ed.carId) || {}).odo ? S.calc.cars.find(c => c.id === ed.carId).odo.lastKm : null;
+  if (odometer && lastKm != null && odometer < lastKm - 5 && !ed.id && !confirm(`${odometer.toLocaleString()} km is lower than the last reading (${lastKm.toLocaleString()} km). Save anyway?`)) return;
+  const total = Math.round(lines.reduce((t, l) => t + l.amount, 0) * 100) / 100;
+  const paidBy = g("sv-paid") === "driver" ? "driver" : "owner";
+  let driverId = "";
+  if (paidBy === "driver") { const a = assignOn(ed.carId, date); if (!a) { toast("No driver had this car on that date"); return; } driverId = a.driverId; }
+  const car = carById(ed.carId) || {}, iv = Number(car.serviceIntervalKm) || Number(S.settings.serviceIntervalKm) || 5000;
+  const nextKm = Number(g("sv-next")) || (type === "service" && odometer ? odometer + iv : 0);
+  const ref = ed.id ? S.db.doc(`services/${ed.id}`) : S.db.collection("services").doc();
+  const id = ed.id || ref.id, m = monthOf(date), old = ed.id ? svcById(ed.id) : null;
+  // one expense per category, e.g. svc_<id>_Service
+  const byCat = {};
+  for (const l of lines) (byCat[l.cat] = byCat[l.cat] || []).push(l);
+  const exps = Object.entries(byCat).map(([cat, ls]) => {
+    const exId = `svc_${id}_${cat.replace(/[^A-Za-z]/g, "")}`;
+    const amount = Math.round(ls.reduce((t, l) => t + l.amount, 0) * 100) / 100;
+    const e = { carId: ed.carId, category: cat, amount, date, vendor: g("sv-garage").slice(0, 120), note: `${(SVC_TYPES.find(t => t[0] === type) || SVC_TYPES[0])[1]}: ${ls.map(l => `${l.desc}${l.qty && l.qty !== 1 ? " ×" + fmtQty(l.qty) : ""}`).join(", ")}`.slice(0, 500), source: "service", serviceId: id, updatedAt: new Date().toISOString() };
+    if (odometer) e.odometer = odometer;
+    if (paidBy === "driver") { e.driverPaid = true; e.driverId = driverId; }
+    return { exId, e };
+  });
+  const data = { carId: ed.carId, date, odometer, type, garage: g("sv-garage").slice(0, 120), ref: g("sv-ref").slice(0, 60), paidBy, driverId, lines, total, nextKm, notes: g("sv-notes").slice(0, 1000),
+    expenseIds: exps.map(x => x.exId), expenseMonth: m, updatedAt: new Date().toISOString(), updatedBy: S.uid };
+  if (!ed.id) { data.createdAt = new Date().toISOString(); data.createdBy = S.uid; data.inspectionId = ""; }
+  const withInsp = !ed.id && (document.getElementById("sv-with-insp") || {}).checked;
+  const ok = await save(async () => {
+    // replace the expenses this visit created before
+    if (old && old.expenseIds) for (const x of old.expenseIds) await S.db.doc(`months/${old.expenseMonth || monthOf(old.date)}/expenses/${x}`).delete().catch(() => {});
+    for (const { exId, e } of exps) await S.db.doc(`months/${m}/expenses/${exId}`).set(e);
+    await ref.set(data, { merge: !!ed.id });
+  }, ed.id ? "Service updated" : `Service saved: ${ksh(total)} added to expenses`);
+  if (!ok) return;
+  refreshMonth(m, "expenses"); if (old && old.expenseMonth && old.expenseMonth !== m) refreshMonth(old.expenseMonth, "expenses");
+  if (!ed.id) logActivity("added", "service", `${(SVC_TYPES.find(t => t[0] === type) || SVC_TYPES[0])[1]} on ${carLabel(ed.carId)}`, total);
+  if (!ed.id && !withInsp) postEvent(S.fleet, "owners", "service", `${carLabel(ed.carId)}: ${(SVC_TYPES.find(t => t[0] === type) || SVC_TYPES[0])[1].toLowerCase()} done for ${ksh(total)}${odometer ? " at " + odometer.toLocaleString() + " km" : ""}`);
+  if (!ed.id && paidBy === "driver" && driverId) postEvent(S.fleet, "driver:" + driverId, "credit", `${ksh(total)} credited for the service you paid for on ${carLabel(ed.carId)}`);
+  S._svcEdit = null;
+  setTimeout(() => withInsp ? formInspection(ed.carId, null, { date, mileage: odometer, garage: data.garage, ref: data.ref, serviceId: id }) : openService(id), 300);
+}
+async function deleteService(id) {
+  const x = svcById(id); if (!x) return false;
+  const ok = await save(async () => {
+    for (const e of x.expenseIds || []) await S.db.doc(`months/${x.expenseMonth || monthOf(x.date)}/expenses/${e}`).delete().catch(() => {});
+    await S.db.doc(`services/${id}`).delete();
+  }, "Service deleted, with its expenses");
+  if (ok) refreshMonth(x.expenseMonth || monthOf(x.date), "expenses");
+  return ok;
+}
+function openService(id) {
+  const x = svcById(id); if (!x) { toast("Service not found"); return; }
+  const car = carById(x.carId) || {}, ins = x.inspectionId ? inspById(x.inspectionId) : null, c = ins ? inspCounts(ins) : null;
+  const type = (SVC_TYPES.find(t => t[0] === x.type) || SVC_TYPES[0])[1];
+  const cats = {}; for (const l of x.lines || []) cats[l.cat] = (cats[l.cat] || 0) + l.amount;
+  openSheet(`${type}: ${car.plate || ""}`, `<div class="detail-grid">
+      <div><span>Date</span><b>${fmtDate(x.date)}</b></div>
+      <div><span>Odometer</span><b>${x.odometer ? Number(x.odometer).toLocaleString() + " km" : "—"}</b></div>
+      <div><span>Garage</span><b>${esc(x.garage || "—")}</b></div>
+      ${x.ref ? `<div><span>Invoice / job card</span><b>${esc(x.ref)}</b></div>` : ""}
+      <div><span>Paid by</span><b>${x.paidBy === "driver" ? "Driver (deducted from what they owe)" : "Owner / fleet"}</b></div>
+      ${x.nextKm ? `<div><span>Next service at</span><b>${Number(x.nextKm).toLocaleString()} km</b></div>` : ""}
+    </div>
+    <h3>What was done or changed</h3>
+    <div class="table-wrap"><table class="condtab"><thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Amount</th></tr></thead><tbody>
+      ${(x.lines || []).map(l => `<tr><td>${esc(l.desc)}<div class="small muted">${esc(l.cat === "Inspection & licences" ? "Inspection" : l.cat)}</div></td><td class="r">${fmtQty(l.qty)}${l.unitName ? " " + esc(l.unitName) : ""}</td><td class="r">${ksh(l.price)}</td><td class="r">${ksh(l.amount)}</td></tr>`).join("")}
+      <tr><td><b>Total</b></td><td></td><td></td><td class="r"><b>${ksh(x.total)}</b></td></tr></tbody></table></div>
+    <p class="small muted">Saved as expenses: ${Object.entries(cats).map(([k, v]) => `${esc(k)} ${ksh(v)}`).join(" · ")}</p>
+    ${x.notes ? `<p class="small">${esc(x.notes)}</p>` : ""}
+    <h3>Inspection</h3>
+    ${ins ? `<div class="list">${inspRow(ins)}</div>` : `<p class="small muted" style="margin:0">No inspection recorded for this visit.</p>`}
+    <div class="row-actions" style="margin-top:12px">${!ins && S.canWrite ? `<button class="btn sm" data-action="sv-insp" data-v="${esc(id)}">Add inspection</button>` : ""}${S.canWrite ? `<button class="btn sm" data-action="sv-edit" data-v="${esc(id)}">Edit</button>` : ""}${S.canManage ? `<button class="btn sm danger" data-action="sv-del" data-v="${esc(id)}">Delete</button>` : ""}</div>`);
+}
+
 /* ============ Vehicle inspections ============ */
 // Status: ok = fine, soon = future attention, now = immediate attention, na = not applicable
 const IN_ST = { ok: "OK", soon: "Soon", now: "Now", na: "N/A" };
@@ -3617,7 +3802,8 @@ function viewInspections() {
 
 // ---- Form ----
 function stBtns(cur) { return `<span class="stbtns">${Object.entries(IN_ST).map(([k, l]) => `<button type="button" class="${k}${cur === k ? " on" : ""}" data-action="in-st" data-v="${k}">${l}</button>`).join("")}</span>`; }
-function formInspection(carId, rec) {
+function formInspection(carId, rec, pre) {
+  pre = pre || {};
   const car = carById(carId); if (!car) return;
   const prev = rec ? null : latestInsp(carId);
   const it = rec ? rec.items || {} : {};
@@ -3636,14 +3822,14 @@ function formInspection(carId, rec) {
     <p class="small muted" style="margin:8px 0 0">FL front left · FR front right · RL rear left · RR rear right. Tread under 3.5 mm turns amber, under 1.6 mm red; brake pads under 4 mm amber, under 2 mm red.</p>`;
   const secs = INSP_SECTIONS.map(([sk, sl, rows]) => `<details class="insp-sec"${sk === "hood" || sk === "front" ? " open" : ""}><summary>${esc(sl)}<span class="small muted">${rows.length}</span></summary><div class="insp-body">${rows.map(([key, label, kind, vlabel]) => { const e = it[key] || {};
     return `<div class="insp-row" data-k="${key}"><div><div class="lbl">${esc(label)}</div>${kind === "stv" ? `<input type="text" data-val="${key}" placeholder="${esc(vlabel ? vlabel[0].toUpperCase() + vlabel.slice(1) : "")}" value="${esc(e.val || sizeFromPrev(key))}" style="margin-top:4px;width:100%;font-size:13px">` : ""}<input data-note="${key}" placeholder="Note" value="${esc(e.note || "")}" style="margin-top:4px;width:100%;font-size:13px"></div><div class="ctl">${stBtns(e.st)}</div></div>`; }).join("")}</div></details>`).join("");
-  S._inspEdit = { carId, id: rec ? rec.id : null };
+  S._inspEdit = { carId, id: rec ? rec.id : null, serviceId: rec ? rec.serviceId || "" : pre.serviceId || "" };
   openSheet(rec ? "Edit inspection" : `Inspection: ${car.plate}`, `
     <div class="grid2">
-      <label class="fl">Date<input id="in-date" type="date" value="${esc(rec ? rec.date : todayStr())}"></label>
-      <label class="fl">Mileage (km)<input id="in-km" type="number" step="any" inputmode="decimal" value="${esc(rec ? rec.mileage || "" : "")}"></label>
-      <label class="fl">Garage / done by<input id="in-garage" value="${esc(rec ? rec.garage || "" : prev ? prev.garage || "" : "")}" placeholder="e.g. AutoXpress Embakasi"></label>
+      <label class="fl">Date<input id="in-date" type="date" value="${esc(rec ? rec.date : pre.date || todayStr())}"></label>
+      <label class="fl">Mileage (km)<input id="in-km" type="number" step="any" inputmode="decimal" value="${esc(rec ? rec.mileage || "" : pre.mileage || "")}"></label>
+      <label class="fl">Garage / done by<input id="in-garage" value="${esc(rec ? rec.garage || "" : pre.garage || (prev ? prev.garage || "" : ""))}" placeholder="e.g. AutoXpress Embakasi"></label>
       <label class="fl">Inspector<input id="in-inspector" value="${esc(rec ? rec.inspector || "" : "")}"></label>
-      <label class="fl">Report / job card no.<input id="in-ref" value="${esc(rec ? rec.ref || "" : "")}"></label>
+      <label class="fl">Report / job card no.<input id="in-ref" value="${esc(rec ? rec.ref || "" : pre.ref || "")}"></label>
       <label class="fl">Estimate (KSh)<input id="in-estimate" type="number" step="any" value="${esc(rec ? rec.estimate || "" : "")}"></label>
     </div>
     <details class="insp-sec" open><summary>Wheels, tyres and brakes<span class="small muted">4 wheels</span></summary><div class="insp-body">${wheels}</div></details>
@@ -3671,18 +3857,20 @@ async function saveInspection() {
   const g = id => String((document.getElementById(id) || {}).value || "").trim();
   const date = g("in-date") || todayStr(), km = Number(g("in-km")) || 0;
   if (!Object.keys(items).length && !g("in-comments")) { toast("Fill in at least one check"); return; }
-  const data = { carId: ed.carId, date, mileage: km, garage: g("in-garage").slice(0, 120), inspector: g("in-inspector").slice(0, 80), ref: g("in-ref").slice(0, 60), estimate: Number(g("in-estimate")) || 0, comments: g("in-comments").slice(0, 1000), items, updatedAt: new Date().toISOString(), updatedBy: S.uid };
+  const data = { serviceId: ed.serviceId || "", carId: ed.carId, date, mileage: km, garage: g("in-garage").slice(0, 120), inspector: g("in-inspector").slice(0, 80), ref: g("in-ref").slice(0, 60), estimate: Number(g("in-estimate")) || 0, comments: g("in-comments").slice(0, 1000), items, updatedAt: new Date().toISOString(), updatedBy: S.uid };
   const ref = ed.id ? S.db.doc(`inspections/${ed.id}`) : S.db.collection("inspections").doc();
   if (!ed.id) { data.createdAt = new Date().toISOString(); data.createdBy = S.uid; }
   const ok = await save(async () => {
     await ref.set(data, { merge: !!ed.id });
     // the inspection mileage also feeds the service tracker
-    if (km > 0 && !ed.id) await writeRecord("odo", { carId: ed.carId, km, date, source: "inspection", note: "From inspection" }, null, true);
+    if (km > 0 && !ed.id && !ed.serviceId) await writeRecord("odo", { carId: ed.carId, km, date, source: "inspection", note: "From inspection" }, null, true);
+    if (ed.serviceId && !ed.id) await S.db.doc(`services/${ed.serviceId}`).set({ inspectionId: ref.id }, { merge: true });
   }, ed.id ? "Inspection updated" : "Inspection saved");
   if (!ok) return;
-  if (!ed.id) { const c = inspCounts({ items }); postEvent(S.fleet, "owners", "inspection", `Inspection for ${carLabel(ed.carId)}: ${c.now ? c.now + " need attention now" : "nothing urgent"}${c.soon ? ", " + c.soon + " soon" : ""}`); }
+  if (!ed.id && !ed.serviceId) { const c = inspCounts({ items }); postEvent(S.fleet, "owners", "inspection", `Inspection for ${carLabel(ed.carId)}: ${c.now ? c.now + " need attention now" : "nothing urgent"}${c.soon ? ", " + c.soon + " soon" : ""}`); }
+  if (!ed.id && ed.serviceId) { const c = inspCounts({ items }), sv = (S.services || []).find(x => x.id === ed.serviceId); postEvent(S.fleet, "owners", "service", `${carLabel(ed.carId)} serviced${sv ? " for " + ksh(sv.total) : ""}. Inspection: ${c.now ? c.now + " need attention now" : "nothing urgent"}${c.soon ? ", " + c.soon + " soon" : ""}`); }
   S._inspEdit = null;
-  setTimeout(() => openInspection(ref.id), 300);
+  setTimeout(() => ed.serviceId ? openService(ed.serviceId) : openInspection(ref.id), 300);
 }
 async function toggleFixed(arg) {
   const [id, k] = arg.split("|"), x = inspById(id); if (!x || !x.items || !x.items[k]) return;
@@ -3710,6 +3898,7 @@ function openInspection(id) {
       ${x.ref ? `<div><span>Report no.</span><b>${esc(x.ref)}</b></div>` : ""}
       ${x.estimate ? `<div><span>Estimate</span><b>${ksh(x.estimate)}</b></div>` : ""}
     </div>
+    ${x.serviceId ? `<p class="small" style="margin:8px 0 0">Done during a <a href="#" data-action="sv-open" data-v="${esc(x.serviceId)}">service visit</a>.</p>` : ""}
     <div class="row-actions" style="margin-top:10px"><button class="btn sm" data-action="in-pdf" data-v="${esc(id)}">Download PDF</button>${S.canWrite ? `<button class="btn sm" data-action="in-edit" data-v="${esc(id)}">Edit</button>` : ""}${S.canManage ? `<button class="btn sm danger" data-action="in-del" data-v="${esc(id)}">Delete</button>` : ""}</div>
     <div class="rep-band now"><span>Immediate attention</span><span>${now.length}</span></div><div class="rep-box">${now.length ? `<div class="list">${now.map(finding).join("")}</div>` : `<p class="small muted">Nothing.</p>`}</div>
     <div class="rep-band soon"><span>Future attention</span><span>${soon.length}</span></div><div class="rep-box">${soon.length ? `<div class="list">${soon.map(finding).join("")}</div>` : `<p class="small muted">Nothing.</p>`}</div>
@@ -3792,7 +3981,7 @@ document.addEventListener("click", async e => {
     case "alerts-all": S.showAllAlerts = !S.showAllAlerts; render(); break;
     case "go": S.detail = null; location.hash = v; break;
     case "back": S.detail = null; render(); break;
-    case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } if (k === "insp") { openInspection(id); break; } if (k === "stock") { location.hash = "stock"; setTimeout(() => openItem(id), 100); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
+    case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } if (k === "insp") { openInspection(id); break; } if (k === "svc") { openService(id); break; } if (k === "stock") { location.hash = "stock"; setTimeout(() => openItem(id), 100); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
     case "close": closeSheet(); break;
     case "quick-add": if (S.mode === "owner") ownerAdd(); else quickAdd(); break;
     case "new-incident": formIncident(); break;
@@ -3805,6 +3994,14 @@ document.addEventListener("click", async e => {
     case "inc-abstract": formAbstract(v); break;
     case "k-new": formContract(v); break;
     case "in-new": formInspection(v); break;
+    case "sv-new": formService(v); break;
+    case "sv-edit": { const x = (S.services || []).find(r => r.id === v); if (x) formService(x.carId, x); break; }
+    case "sv-open": e.preventDefault(); openService(v); break;
+    case "sv-add": addSvcLine(v ? JSON.parse(v) : {}); break;
+    case "sv-rm": { const row = el.closest(".svc-line"); if (row) row.remove(); svcTotal(); break; }
+    case "sv-save": saveService(); break;
+    case "sv-insp": { const x = (S.services || []).find(r => r.id === v); if (x) formInspection(x.carId, null, { date: x.date, mileage: x.odometer, garage: x.garage, ref: x.ref, serviceId: x.id }); break; }
+    case "sv-del": { if (!confirmTap(el, "Tap again to delete")) break; if (await deleteService(v)) closeSheet(); break; }
     case "in-edit": { const x = inspById(v); if (x) formInspection(x.carId, x); break; }
     case "in-open": openInspection(v); break;
     case "in-save": saveInspection(); break;
@@ -3878,7 +4075,7 @@ document.addEventListener("click", async e => {
     case "edit-car": formCar(S.cars.find(c => c.id === v)); break;
     case "edit-driver": formDriver(S.drivers.find(d => d.id === v)); break;
     case "edit-assign": formAssign(null, S.assigns.find(x => x.id === v)); break;
-    case "edit-rec": { const k = el.dataset.k, rec = findRec(k, v, el.dataset.m); if (!rec) break; ({ payments: () => formPayment(null, rec), expenses: () => formExpense(null, rec), downtime: () => formDowntime(null, rec), odo: () => formOdo(null, rec) })[k](); break; }
+    case "edit-rec": { const k = el.dataset.k, rec = findRec(k, v, el.dataset.m); if (!rec) break; if (k === "expenses" && rec.serviceId && svcById(rec.serviceId)) { openService(rec.serviceId); break; } ({ payments: () => formPayment(null, rec), expenses: () => formExpense(null, rec), downtime: () => formDowntime(null, rec), odo: () => formOdo(null, rec) })[k](); break; }
     case "statement": openStatement(v); break;
     case "settle-driver": formSettle(v); break;
     case "copy-stmt": try { await navigator.clipboard.writeText(document.getElementById("stmt-text").textContent); toast("Statement copied"); } catch (er) { toast("Copy blocked. Select the text and copy it."); } break;
@@ -3888,6 +4085,7 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("input", e => {
+  if (e.target.closest && e.target.closest(".svc-line")) svcTotal();
   if (e.target.dataset && e.target.dataset.mm) { const v = parseFloat(e.target.value), [now, soon] = e.target.dataset.mm.split(",").map(Number); e.target.classList.toggle("now", isFinite(v) && v < now); e.target.classList.toggle("soon", isFinite(v) && v >= now && v < soon); }
   if (e.target.id === "stock-q") { S.stockQ = e.target.value; const pos = e.target.selectionStart; render(); const el = document.getElementById("stock-q"); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) {} } }
 });
