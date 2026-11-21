@@ -254,6 +254,14 @@ pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(-
 .member { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .member:last-child { border-bottom: 0; }
 .member select { width: auto; }
+.sigpad { position: relative; border: 2px dashed var(--line); border-radius: 10px; background: #fff; margin: 6px 0; touch-action: none; }
+.sigpad canvas { display: block; width: 100%; height: 160px; border-radius: 8px; cursor: crosshair; touch-action: none; }
+.sigpad .hint { position: absolute; left: 12px; bottom: 8px; font-size: 12px; color: #8090A8; pointer-events: none; }
+.sigpad .btn { position: absolute; right: 8px; top: 8px; }
+.contract-text { max-height: 46vh; overflow: auto; white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.sig-img { height: 54px; background: #fff; border-radius: 6px; padding: 2px 6px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 14px; }
+.kv span { color: var(--muted); }
 .bell { position: relative; padding: 6px 10px; }
 .bell svg { width: 18px; height: 18px; display: block; }
 .bell .count { position: absolute; top: -6px; right: -6px; margin: 0; }
@@ -353,7 +361,7 @@ const S = {
   db: null, raw: null, user: null, canWrite: true,
   role: null, fleet: null, fleets: [], fleetsReady: false, subsBy: {}, subWatch: {}, mySubs: [], ownerState: "loading", fleetMeta: null,
   mode: "loading", org: null, orgName: "", orgs: [], staffRole: null, canManage: false, isAdmin: false, accessRole: null, myAccess: [],
-  waiting: new Set(), recordsReady: false, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
+  waiting: new Set(), recordsReady: false, contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
   cars: [], drivers: [], assigns: [], settings: { ...DEFAULT_SETTINGS },
   months: {},          // "YYYY-MM" -> {payments:[], expenses:[], downtime:[], odo:[]}
   loadedMonths: new Set(), subs: [], coreReady: { cars: false, drivers: false, assigns: false, settings: false },
@@ -538,6 +546,19 @@ function compute() {
 
   // Alerts
   const alerts = [];
+  if (S.mode === "staff") for (const d of drivers) {
+    if (!d.assign) continue;
+    const ks = (S.contracts || []).filter(k => k.driverId === d.id && k.status !== "ended" && k.status !== "void");
+    const signed = ks.find(k => k.status === "signed");
+    if (signed) {
+      if (signed.end && signed.end < T) alerts.push({ sev: "bad", what: `${d.name}'s contract has ended`, why: `Ended ${fmtDate(signed.end)} but they still have a car. Prepare a new one.`, link: "driver:" + d.id, sort: 3 });
+      else if (signed.end && dayDiff(T, signed.end) <= 30) alerts.push({ sev: "warn", what: `${d.name}'s contract ends in ${dayDiff(T, signed.end)} days`, why: `Ends ${fmtDate(signed.end)}. Prepare a renewal.`, link: "driver:" + d.id, sort: 20 });
+    } else {
+      const waiting = ks.find(k => k.status === "sent" || k.status === "driver_signed");
+      if (waiting) { const age = dayDiff(String(waiting.sentAt || waiting.createdAt || T).slice(0, 10), T); if (waiting.status === "driver_signed") alerts.push({ sev: "warn", what: `Countersign ${d.name}'s contract`, why: "The driver has signed. A manager needs to sign too.", link: "driver:" + d.id, sort: 12 }); else if (age >= 3) alerts.push({ sev: "warn", what: `${d.name} hasn't signed their contract`, why: `Sent ${age} days ago`, link: "driver:" + d.id, sort: 22 }); }
+      else alerts.push({ sev: "warn", what: `No signed contract for ${d.name}`, why: "Prepare one from their driver page", link: "driver:" + d.id, sort: 25 });
+    }
+  }
   for (const i of S.incidents || []) {
     if (i.status === "closed") continue;
     const age = dayDiff(i.date, T);
@@ -654,7 +675,7 @@ function resetFleetState() {
   S.subs = []; S.cars = []; S.drivers = []; S.assigns = []; S.settings = { ...DEFAULT_SETTINGS };
   S.months = {}; S.loadedMonths = new Set(); S.coreReady = { cars: false, drivers: false, assigns: false, settings: false };
   S.act = {}; S.vis = {}; S.actLoaded = false; S.detail = null; S.calc = null; S._sumKey = null; S.incidents = [];
-  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null;
+  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null; S.contracts = []; S.priv = {};
 }
 
 function loadFleet() {
@@ -672,6 +693,7 @@ function loadFleet() {
   core("assigns", "assignments", "assigns");
   // Incidents load alongside, without holding up the first screen
   S.subs.push(S.db.collection("incidents").onSnapshot(snap => { S.incidents = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
+  if (S.mode === "staff") S.subs.push(S.db.collection("contracts").onSnapshot(snap => { S.contracts = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
   S.subs.push(S.db.doc("settings/main").onSnapshot(snap => {
     S.settings = { ...DEFAULT_SETTINGS, ...(snap.exists ? snap.data() : {}) };
     S.coreReady.settings = true;
@@ -754,6 +776,8 @@ function startAccess(a) {
       render();
     }, () => {}));
     S.top.push(S.raw.collection(`${fleetBase()}/incidents`).where("driverId", "==", a.driverId).onSnapshot(snap => { S.incidents = snapRows(snap); render(); }, () => {}));
+    S.top.push(S.raw.collection(`${fleetBase()}/contracts`).where("driverId", "==", a.driverId).onSnapshot(snap => { S.contracts = snapRows(snap).filter(x => x.status !== "draft"); render(); }, () => {}));
+    S.top.push(S.raw.doc(`${fleetBase()}/drivers/${a.driverId}/private/details`).onSnapshot(snap => { S.myPriv = snap.exists ? snap.data() : null; render(); }, () => {}));
     watchEvents(a.fleet, ["driver:" + a.driverId, "uid:" + S.uid]);
     render(); return;
   }
@@ -1182,6 +1206,8 @@ function driverDetail(c, id) {
     <div><span>Total paid</span><b>${ksh(totalPaid)}</b>${d.credAll ? `<div class="small muted">incl. ${ksh(d.credAll)} car costs</div>` : ""}</div>
     <div><span>Total due</span><b>${ksh(d.expAll + d.chgAll + (Number(d.openingBalance) || 0))}</b></div>
   </div></div>
+  ${S.mode === "staff" ? privateCard(id) : ""}
+  ${S.mode === "staff" ? contractCard(d) : ""}
   ${daysPaidCard(c, d)}
   <h3>Payments</h3>${recordList("payments", pays)}
   ${cred.length ? `<h3>Car costs the driver paid (deducted)</h3>${recordList("expenses", cred)}` : ""}
@@ -1287,7 +1313,8 @@ function viewMore() {
   const recent = k => all(k).sort((a, b) => (b.date || b.from).localeCompare(a.date || a.from)).slice(0, 20);
   const tab = S.moreTab || "expenses";
   if ((S.moreTab || "expenses") === "incidents") return viewIncidents();
-  const tabs = [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"]];
+  if ((S.moreTab || "expenses") === "contracts") { if (S.mode === "staff") return viewContracts(); S.moreTab = "expenses"; }
+  const tabs = REC_TABS();
   const addAction = { expenses: "new-expense", downtime: "new-downtime", odo: "new-odo", payments: "new-payment" }[tab];
   return `<div class="section"><div class="section-head"><h2>Records</h2>${S.canWrite ? `<div class="row-actions"><button class="btn sm" data-action="go" data-v="import">Import M-Pesa</button><button class="btn sm" data-action="go" data-v="settings">Settings</button></div>` : ""}</div>${S.role === "owner" ? mySubmissions() : ""}
   <div class="section-head"><div class="seg">${tabs.map(([k, l]) => `<button data-action="more-tab" data-v="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>${S.canWrite && S.cars.length ? `<button class="btn primary sm" data-action="${addAction}">Add</button>` : canSubmit() && S.cars.length && tab === "expenses" ? `<button class="btn primary sm" data-action="submit-expense">Add expense</button>` : ""}</div>
@@ -1570,23 +1597,38 @@ function formCar(rec) {
   }, { onDelete: rec ? () => { if (S.assigns.some(a => a.carId === rec.id) || all("payments").some(p => p.carId === rec.id)) { toast("This car has history. Set a sold date instead of deleting it."); return false; } return save(() => S.db.collection("cars").doc(rec.id).delete(), "Car deleted"); } : null });
 }
 
-function formDriver(rec) {
+async function formDriver(rec) {
   const r = rec || {};
+  let pv = {};
+  if (rec) { try { const snap = await S.db.doc(`drivers/${rec.id}/private/details`).get(); pv = snap.exists ? snap.data() : {}; } catch (e) {} }
   openForm(rec ? "Edit driver" : "Add a driver", [
     { id: "name", label: "Full name", value: r.name, required: true, hint: "Use the name as it appears on M-Pesa so payments match" },
     { id: "phone", label: "M-Pesa phone number", type: "tel", value: r.phone, placeholder: "0712 345 678", half: true },
     { id: "startDate", label: "Joined on", type: "date", value: r.startDate, half: true },
     { id: "licenseExpiry", label: "Driving licence expires", type: "date", value: r.licenseExpiry, half: true },
     { id: "psvBadgeExpiry", label: "PSV badge expires", type: "date", value: r.psvBadgeExpiry, half: true },
+    { id: "idNumber", label: "National ID number", value: pv.idNumber || "", half: true },
+    { id: "dlNumber", label: "Driving licence number", value: pv.dlNumber || "", half: true },
+    { id: "kinName", label: "Next of kin: name", value: pv.kinName || "", half: true },
+    { id: "kinRelation", label: "Relationship", value: pv.kinRelation || "", placeholder: "e.g. Wife, Brother", half: true },
+    { id: "kinPhone", label: "Next of kin: phone", type: "tel", value: pv.kinPhone || "", half: true },
     { id: "deposit", label: "Deposit held (KSh)", type: "number", value: r.deposit, half: true },
     { id: "openingBalance", label: "Already owes (KSh)", type: "number", value: r.openingBalance, half: true, hint: "Arrears from before your start date" },
     { id: "status", label: "Status", type: "select", options: [["active", "Active"], ["left", "Left the fleet"]], value: r.status || "active" },
     { id: "notes", label: "Notes", type: "textarea", value: r.notes }
   ], async v => {
     if (!v.name) return "Enter the driver's name";
+    const t = (x, n) => String(x || "").trim().slice(0, n);
+    const priv = { idNumber: t(v.idNumber, 20), dlNumber: t(v.dlNumber, 30), kinName: t(v.kinName, 80), kinRelation: t(v.kinRelation, 40), kinPhone: t(v.kinPhone, 20) };
+    for (const k of Object.keys(priv)) delete v[k];
     const ref = rec ? S.db.collection("drivers").doc(rec.id) : S.db.collection("drivers").doc();
-    return save(() => ref.set({ ...v, updatedAt: new Date().toISOString() }), rec ? "Driver updated" : "Driver added");
-  }, { onDelete: rec ? () => { if (S.assigns.some(a => a.driverId === rec.id) || all("payments").some(p => p.driverId === rec.id)) { toast("This driver has history. Set status to Left instead."); return false; } return save(() => S.db.collection("drivers").doc(rec.id).delete(), "Driver deleted"); } : null });
+    const ok = await save(async () => {
+      await ref.set({ ...v, updatedAt: new Date().toISOString() }, { merge: true });
+      await S.db.doc(`drivers/${ref.id}/private/details`).set({ ...priv, updatedAt: new Date().toISOString() });
+    }, rec ? "Driver updated" : "Driver added");
+    if (ok) { S.priv[ref.id] = priv; render(); }
+    return ok;
+  }, { intro: "ID, licence number and next of kin are private: only your team and the driver can see them, not owners.", onDelete: rec ? () => { if (S.assigns.some(a => a.driverId === rec.id) || all("payments").some(p => p.driverId === rec.id)) { toast("This driver has history. Set status to Left instead."); return false; } return save(() => S.db.collection("drivers").doc(rec.id).delete(), "Driver deleted"); } : null });
 }
 
 function formAssign(pre, rec) {
@@ -2189,9 +2231,10 @@ function viewDriver() {
       <button class="tile" data-action="drv-odo">${ICON.odo}<span>Mileage</span></button>
     </div>
     ${hasCar ? "" : `<p class="small muted" style="margin:-6px 0 14px">${noCarReason()}</p>`}
+    ${driverContractPrompt()}
     <button class="btn danger" style="width:100%;margin:0 0 14px" data-action="drv-incident">Report an incident</button>
     ${(S.incidents || []).length ? `<div class="card"><h3>Your incidents</h3><div class="list">${sortInc(S.incidents).slice(0, 8).map(incRow).join("")}</div></div>` : ""}
-    ${subs}${svc}${docsHtml}${recent}
+    ${subs}${svc}${docsHtml}${myDetailsCard()}${recent}
     <div class="card"><details class="stmt-box"><summary>Full statement</summary><pre class="stmt">${esc(st.text || "")}</pre></details><p class="small muted" style="margin:6px 0 0">Updated ${esc(timeAgo(st.updatedAt))}. If something looks wrong, contact your manager.</p></div>
   </div>`;
 }
@@ -2408,7 +2451,7 @@ function incidentsCard() {
 }
 function viewIncidents() {
   const rows = sortInc(S.incidents || []);
-  const tabs = [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"]];
+  const tabs = REC_TABS();
   const canReport = S.canWrite || S.accessRole === "owner";
   const open = rows.filter(i => i.status !== "closed").length;
   const cost = rows.reduce((t, i) => t + incCosts(i).net, 0);
@@ -2691,6 +2734,337 @@ async function incidentPdf(id) {
   doc.save(name);
 }
 
+/* ============ Driver private details & contracts ============ */
+const REC_TABS = () => [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"], ...(S.mode === "staff" ? [["contracts", "Contracts"]] : [])];
+async function loadPrivate(id) {
+  if (S.priv[id] !== undefined || S.mode !== "staff") return S.priv[id];
+  S.priv[id] = null;
+  try { const snap = await S.db.doc(`drivers/${id}/private/details`).get(); S.priv[id] = snap.exists ? snap.data() : {}; } catch (e) { S.priv[id] = {}; }
+  render(); return S.priv[id];
+}
+function privateCard(id) {
+  const p = S.priv[id];
+  if (p === undefined) { setTimeout(() => loadPrivate(id), 0); return ""; }
+  if (p === null) return `<div class="card small muted">Loading private details…</div>`;
+  const kin = [p.kinName, p.kinRelation ? `(${p.kinRelation})` : "", p.kinPhone].filter(Boolean).join(" ");
+  return `<div class="card"><div class="section-head" style="margin:0 0 6px"><h3 style="margin:0">Identity &amp; next of kin</h3><span class="small muted">Team only</span></div>
+    <div class="kv"><span>National ID</span><b>${esc(p.idNumber || "—")}</b><span>Licence number</span><b>${esc(p.dlNumber || "—")}</b><span>Next of kin</span><b>${kin ? esc(kin) : "—"}</b></div>
+    ${p.kinPhone ? `<div class="row-actions" style="margin-top:8px"><a class="btn sm" href="tel:${esc(p.kinPhone.replace(/\s/g, ""))}">Call next of kin</a></div>` : ""}
+    ${!p.idNumber || !p.dlNumber || !p.kinPhone ? `<p class="small muted" style="margin:8px 0 0">Missing details can be added with <b>Edit driver</b>.</p>` : ""}</div>`;
+}
+function myDetailsCard() {
+  const p = S.myPriv; if (!p) return "";
+  const kin = [p.kinName, p.kinRelation ? `(${p.kinRelation})` : "", p.kinPhone].filter(Boolean).join(" ");
+  return `<div class="card"><h3>My details</h3><div class="kv"><span>National ID</span><b>${esc(p.idNumber || "—")}</b><span>Licence number</span><b>${esc(p.dlNumber || "—")}</b><span>Next of kin</span><b>${kin ? esc(kin) : "—"}</b></div><p class="small muted" style="margin:8px 0 0">Something wrong? Ask your manager to update it.</p></div>`;
+}
+
+const K_STATUS = { draft: ["neutral", "Draft"], sent: ["warn", "Waiting for driver"], driver_signed: ["warn", "Waiting for manager"], signed: ["good", "Signed"], ended: ["neutral", "Ended"], void: ["neutral", "Cancelled"] };
+const kById = id => (S.contracts || []).find(k => k.id === id);
+const kLabel = k => (K_STATUS[k.status] || K_STATUS.draft)[1];
+function kRow(k) {
+  const [cls, lab] = K_STATUS[k.status] || K_STATUS.draft;
+  return `<div class="li" data-action="k-view" data-v="${esc(k.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(S.mode === "driver" ? k.title : driverNameSafe(k.driverId))} ${k.carId ? plate(S.mode === "driver" ? (k.carPlate || "") : carLabel(k.carId)) : ""}</div><div class="small muted">${fmtDate(k.start)} – ${k.end ? fmtDate(k.end) : "open-ended"} · ${ksh(k.rate)}/day</div></div><div class="end">${pill(cls, lab)}</div></div>`;
+}
+function contractCard(d) {
+  const ks = (S.contracts || []).filter(k => k.driverId === d.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const cur = ks.find(k => !["ended", "void"].includes(k.status));
+  const head = `<div class="section-head" style="margin:0 0 6px"><h3 style="margin:0">Contract</h3>${S.canManage ? `<button class="btn sm${cur ? "" : " primary"}" data-action="k-new" data-v="${esc(d.id)}">${cur ? "New contract" : "Prepare contract"}</button>` : ""}</div>`;
+  if (!ks.length) return `<div class="card">${head}<p class="small muted" style="margin:0">No contract yet.${d.assign ? " This driver has a car without a signed contract." : ""}</p></div>`;
+  return `<div class="card">${head}<div class="list">${ks.slice(0, 5).map(kRow).join("")}</div></div>`;
+}
+function driverContractPrompt() {
+  const k = (S.contracts || []).filter(x => x.status === "sent" && !x.driverSig).sort((a, b) => String(b.sentAt).localeCompare(String(a.sentAt)))[0];
+  const signed = (S.contracts || []).filter(x => ["signed", "driver_signed", "ended"].includes(x.status)).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  let html = "";
+  if (k) html += `<div class="card" style="border-left:5px solid var(--warn)"><h3 style="margin-top:0">Your contract is ready to sign</h3><p class="small" style="margin:0 0 10px">${esc(k.title)} · ${ksh(k.rate)} per day from ${fmtDate(k.start)}. Read it carefully before signing.</p><button class="btn primary" data-action="k-view" data-v="${esc(k.id)}">Read and sign</button></div>`;
+  if (signed.length) html += `<div class="card"><h3>Your contract${signed.length > 1 ? "s" : ""}</h3><div class="list">${signed.slice(0, 3).map(kRow).join("")}</div></div>`;
+  return html;
+}
+
+// ---- Template ----
+const K_FIELDS = [
+  ["fleet_name", "Fleet name"], ["org_name", "Your organisation"], ["owner_name", "Owner's name"], ["driver_name", "Driver's full name"], ["driver_id_no", "Driver's ID number"], ["driver_dl_no", "Licence number"],
+  ["driver_phone", "Driver's phone"], ["kin_name", "Next of kin"], ["kin_phone", "Next of kin phone"], ["car_plate", "Number plate"], ["car_make_model", "Make and model"],
+  ["daily_rate", "Daily fee"], ["rest_day", "Rest day"], ["deposit", "Deposit"], ["start_date", "Start date"], ["end_date", "End date"], ["notice_days", "Notice period (days)"],
+  ["arrears_days", "Days of arrears before the car is withdrawn"], ["pay_info", "How to pay"], ["extra_terms", "Extra terms for this driver"], ["today", "Today's date"]
+];
+const DEFAULT_TEMPLATE = `VEHICLE LEASE AGREEMENT
+
+This agreement is between {{org_name}}, managing the vehicle on behalf of its owner ("the Manager"), and {{driver_name}}, ID number {{driver_id_no}}, driving licence number {{driver_dl_no}}, phone {{driver_phone}} ("the Driver").
+
+1. THE VEHICLE
+The Manager leases to the Driver the vehicle {{car_plate}} ({{car_make_model}}) for use on ride-hailing platforms such as Uber and Bolt.
+
+2. TERM
+This agreement starts on {{start_date}} and ends on {{end_date}}, unless ended earlier under clause 11.
+
+3. DAILY FEE
+3.1 The Driver pays {{daily_rate}} for each day they have the vehicle, except their weekly rest day ({{rest_day}}).
+3.2 Payment is due daily. {{pay_info}}
+3.3 No fee is charged for days the vehicle is off the road for reasons that are not the Driver's fault, such as servicing or repairs the Manager arranges.
+3.4 Partial payments are allowed, but any balance owed is carried forward and must be cleared.
+
+4. DEPOSIT
+The Driver pays a refundable deposit of {{deposit}}. At the end of this agreement it may be used to cover money owed, fines, or damage the Driver is responsible for. Any remainder is refunded.
+
+5. WHAT THE DRIVER PAYS FOR
+Fuel; traffic fines and penalties incurred while the Driver has the vehicle; minor damage caused by the Driver; and their own licences, PSV badge and platform accounts. If the Manager pays any of these first, the amount is added to what the Driver owes.
+
+6. WHAT THE MANAGER PAYS FOR
+Servicing and repairs from normal use, insurance, vehicle inspection and licences, tyres, and the tracker.
+
+7. USE OF THE VEHICLE
+7.1 Only the Driver may drive the vehicle. It must not be sublet or lent to anyone.
+7.2 The Driver must hold a valid driving licence and PSV badge at all times and obey traffic laws and platform rules.
+7.3 The Driver must keep the vehicle clean, check oil, water and tyres regularly, and report any fault immediately.
+7.4 The Driver must report the odometer reading at least once a week, and bring the vehicle for servicing when asked.
+
+8. ACCIDENTS AND INCIDENTS
+The Driver must report any accident, breakdown, theft or police matter to the Manager within 24 hours, using the DRYVR app where possible, and obtain a police abstract when required. Damage caused by the Driver's negligence, or the insurance excess on a claim caused by the Driver, may be charged to the Driver.
+
+9. ARREARS
+If the Driver falls more than {{arrears_days}} days behind on payments, the Manager may take back the vehicle until the balance is cleared.
+
+10. TRACKING AND PERSONAL DATA
+The vehicle has a tracker. The Driver agrees that the Manager may record their personal details, payments and vehicle use to manage this agreement, in line with the Data Protection Act, 2019. This information is not shared except with the vehicle owner, insurers, or authorities where required.
+
+11. ENDING THE AGREEMENT
+Either party may end this agreement with {{notice_days}} days' written notice, including through the DRYVR app. The Manager may end it immediately for serious breach, including unpaid fees beyond clause 9, unlicensed driving, subletting, or dangerous or illegal use. On ending, the Driver returns the vehicle, keys and documents in the same condition, apart from normal wear.
+
+12. EXTRA TERMS
+{{extra_terms}}
+
+13. NEXT OF KIN
+In an emergency the Manager may contact the Driver's next of kin: {{kin_name}}, {{kin_phone}}.
+
+14. AGREEMENT
+By signing below, both parties confirm they have read, understood and agree to these terms. Electronic signatures made in the DRYVR app are binding.`;
+async function loadTemplate() {
+  if (S.template) return S.template;
+  try { const snap = await S.raw.doc(`orgs/${S.org}/templates/contract`).get(); S.template = snap.exists ? snap.data() : null; } catch (e) { S.template = null; }
+  return S.template || { title: "Vehicle lease agreement", body: DEFAULT_TEMPLATE, months: 6, noticeDays: 7 };
+}
+async function formTemplate() {
+  const t = await loadTemplate();
+  openForm("Contract template", [
+    { id: "title", label: "Title", value: t.title || "Vehicle lease agreement" },
+    { id: "months", label: "Default length (months)", type: "number", value: t.months || 6, half: true },
+    { id: "noticeDays", label: "Notice period (days)", type: "number", value: t.noticeDays || 7, half: true },
+    { id: "body", label: "Contract text", type: "textarea", value: t.body || DEFAULT_TEMPLATE, hint: "Fill-in fields: " + K_FIELDS.map(([k]) => "{{" + k + "}}").join(" ") }
+  ], async v => {
+    if (String(v.body || "").length < 200) return "The contract text looks too short";
+    const data = { title: String(v.title || "Vehicle lease agreement").slice(0, 120), body: String(v.body).slice(0, 30000), months: Math.max(1, Number(v.months) || 6), noticeDays: Math.max(0, Number(v.noticeDays) || 7), updatedAt: new Date().toISOString(), updatedBy: S.uid };
+    const ok = await save(() => S.raw.doc(`orgs/${S.org}/templates/contract`).set(data), "Template saved");
+    if (ok) S.template = data;
+    return ok;
+  }, { intro: "This is used for every new contract in your organisation. Contracts already sent keep the wording they were sent with. Have a lawyer check it before you rely on it." });
+  setTimeout(() => { const ta = document.getElementById("f-body"); if (ta) ta.rows = 18; }, 50);
+}
+
+// ---- Prepare and send ----
+function contractEnd(dateStr, n) { const [y, m, d] = dateStr.split("-").map(Number); const dt = new Date(y, m - 1 + n, d); if (dt.getDate() !== d) dt.setDate(0); dt.setDate(dt.getDate() - 1); return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`; }
+async function sha256(text) { try { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join(""); } catch (e) { return ""; } }
+async function formContract(driverId) {
+  const d = S.drivers.find(x => x.id === driverId); if (!d) return;
+  const t = await loadTemplate(), pv = (await loadPrivate(driverId)) || {};
+  const a = S.calc && (S.calc.drivers.find(x => x.id === driverId) || {}).assign;
+  const start = a && a.start > todayStr() ? a.start : todayStr();
+  const owners = ownersOf(S.fleet);
+  openForm(`Contract for ${d.name}`, [
+    { id: "carId", label: "Car", type: "select", options: carOpts("Choose car"), value: a ? a.carId : "", required: true },
+    { id: "rate", label: "Daily fee (KSh)", type: "number", value: a ? a.rate : "", required: true, half: true },
+    { id: "restDay", label: "Rest day", type: "select", options: [["", "No rest day"]].concat(DAYS.map((x, i) => [String(i), x])), value: a && a.restDay !== "" && a.restDay != null ? String(a.restDay) : "0", half: true },
+    { id: "deposit", label: "Deposit (KSh)", type: "number", value: d.deposit || 0, half: true },
+    { id: "noticeDays", label: "Notice period (days)", type: "number", value: t.noticeDays || 7, half: true },
+    { id: "start", label: "Starts", type: "date", value: start, half: true },
+    { id: "end", label: "Ends", type: "date", value: contractEnd(start, t.months || 6), half: true },
+    { id: "extra", label: "Extra terms for this driver", type: "textarea", value: "", placeholder: "Optional, e.g. a weekly target or a deposit paid in instalments" }
+  ], async v => {
+    if (!v.carId) return "Choose the car"; if (!(v.rate > 0)) return "Enter the daily fee";
+    if (v.end && v.end <= v.start) return "The end date must be after the start date";
+    const missing = [!pv.idNumber && "ID number", !pv.dlNumber && "licence number"].filter(Boolean);
+    if (missing.length && !confirm(`${d.name}'s ${missing.join(" and ")} ${missing.length > 1 ? "are" : "is"} missing, so the contract will leave ${missing.length > 1 ? "them" : "it"} blank. Continue?`)) return false;
+    const car = carById(v.carId) || {};
+    const vals = {
+      fleet_name: (S.fleetMeta && S.fleetMeta.name) || S.settings.name, org_name: S.orgName, owner_name: owners.join(" and ") || "the vehicle owner",
+      driver_name: d.name, driver_id_no: pv.idNumber || "__________", driver_dl_no: pv.dlNumber || "__________", driver_phone: d.phone || "", kin_name: pv.kinName || "__________", kin_phone: pv.kinPhone || "__________",
+      car_plate: car.plate || "", car_make_model: [car.make, car.model, car.year].filter(Boolean).join(" ") || "as described", daily_rate: ksh(v.rate), rest_day: v.restDay === "" ? "none" : DAYS[+v.restDay],
+      deposit: ksh(v.deposit || 0), start_date: fmtDate(v.start), end_date: v.end ? fmtDate(v.end) : "the date either party ends it", notice_days: String(v.noticeDays || 7),
+      arrears_days: String(S.settings.arrearsDays || 2), pay_info: S.settings.payInfo || "", extra_terms: String(v.extra || "").trim() || "None.", today: fmtDate(todayStr())
+    };
+    const body = String(t.body || DEFAULT_TEMPLATE).replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (m, k) => vals[k] != null ? vals[k] : "");
+    const ref = S.db.collection("contracts").doc();
+    const data = { driverId, carId: v.carId, carPlate: car.plate || "", title: t.title || "Vehicle lease agreement", body, rate: v.rate, restDay: v.restDay, deposit: Number(v.deposit) || 0, start: v.start, end: v.end || "", noticeDays: Number(v.noticeDays) || 7, status: "draft", createdAt: new Date().toISOString(), createdBy: S.uid, driverSig: null, managerSig: null };
+    const ok = await save(() => ref.set(data), "Draft saved");
+    if (ok) setTimeout(() => openContract(ref.id), 300);
+    return ok;
+  }, { saveLabel: "Create draft", intro: `Uses your organisation's contract template (edit it under Records → Contracts). You'll see the full text before sending.` });
+}
+async function sendContract(id) {
+  const k = kById(id); if (!k) return;
+  const bodyHash = await sha256(k.body);
+  const ok = await save(() => S.db.doc(`contracts/${id}`).update({ status: "sent", sentAt: S.raw.TS, bodyHash }), "Sent to the driver");
+  if (ok) { postEvent(S.fleet, "driver:" + k.driverId, "contract", `Your contract (${k.title}) is ready. Open DRYVR to read and sign it.`); setTimeout(() => openContract(id), 300); }
+}
+
+// ---- View ----
+function sigBlock(label, sg) {
+  if (!sg) return `<div><span>${label}</span><b class="muted">Not signed</b></div>`;
+  return `<div><span>${label}</span><img class="sig-img" src="${esc(sg.image)}" alt="Signature of ${esc(sg.name)}"><div class="small">${esc(sg.name)}${sg.method === "in_person" ? " (signed in person)" : ""} · ${esc(fmtDate(String(sg.at || "").slice(0, 10)))}</div></div>`;
+}
+function openContract(id) {
+  const k = kById(id); if (!k) { toast("Contract not found"); return; }
+  const [cls, lab] = K_STATUS[k.status] || K_STATUS.draft;
+  const mgr = S.mode === "staff" && S.canManage, isDrv = S.mode === "driver";
+  const acts = [];
+  if (mgr && k.status === "draft") acts.push(`<button class="btn primary sm" data-action="k-send" data-v="${esc(id)}">Send to driver to sign</button>`, `<button class="btn sm danger" data-action="k-delete" data-v="${esc(id)}">Delete draft</button>`);
+  if (mgr && k.status === "sent" && !k.driverSig) acts.push(`<button class="btn sm" data-action="k-sign" data-role="driver_in_person" data-v="${esc(id)}">Driver signs on this phone</button>`);
+  if (mgr && ["sent", "driver_signed"].includes(k.status) && !k.managerSig) acts.push(`<button class="btn primary sm" data-action="k-sign" data-role="manager" data-v="${esc(id)}">Sign as manager</button>`);
+  if (isDrv && k.status === "sent" && !k.driverSig) acts.push(`<button class="btn primary" data-action="k-sign" data-role="driver" data-v="${esc(id)}">Sign this contract</button>`);
+  if (k.status !== "draft") acts.push(`<button class="btn sm" data-action="k-pdf" data-v="${esc(id)}">Download PDF</button>`);
+  if (mgr && ["signed", "sent", "driver_signed"].includes(k.status)) acts.push(`<button class="btn sm" data-action="k-end" data-v="${esc(id)}">${k.status === "signed" ? "End contract" : "Cancel"}</button>`);
+  openSheet(k.title, `<div class="section-head" style="margin:0 0 8px"><span class="small">${isDrv ? "" : esc(driverNameSafe(k.driverId)) + " · "}${k.carPlate ? plate(k.carPlate) : ""} ${ksh(k.rate)}/day · ${fmtDate(k.start)} – ${k.end ? fmtDate(k.end) : "open-ended"}</span>${pill(cls, lab)}</div>
+    ${k.status === "ended" ? `<p class="small"><b>Ended ${fmtDate(k.endedOn)}</b>${k.endReason ? ": " + esc(k.endReason) : ""}</p>` : ""}
+    <div class="contract-text">${esc(k.body)}</div>
+    <div class="detail-grid" style="margin-top:12px">${sigBlock("Driver", k.driverSig)}${sigBlock("Manager", k.managerSig)}</div>
+    ${acts.length ? `<div class="row-actions" style="margin-top:12px">${acts.join("")}</div>` : ""}
+    ${k.bodyHash ? `<p class="small muted" style="margin:10px 0 0">Document fingerprint ${esc(k.bodyHash.slice(0, 16))}…: it changes if the wording is altered after sending.</p>` : ""}`);
+}
+
+// ---- Signing ----
+function openSignSheet(id, role) {
+  const k = kById(id); if (!k) return;
+  const who = role === "manager" ? (S.me.name || "") : role === "driver" ? ((S.stmt && S.stmt.name) || S.me.name || "") : driverNameSafe(k.driverId);
+  openSheet(role === "manager" ? "Sign as manager" : "Sign the contract", `
+    ${role === "driver_in_person" ? `<p class="small"><b>Hand the phone to ${esc(who)}.</b> They read the contract and sign below. You are recorded as the witness.</p>` : ""}
+    <div class="contract-text" style="max-height:30vh">${esc(k.body)}</div>
+    <label class="fl" for="sig-name" style="margin-top:10px">Full name<input id="sig-name" value="${esc(who)}" maxlength="80" autocomplete="name"></label>
+    <div class="small" style="margin-top:8px">Signature</div>
+    <div class="sigpad"><canvas id="sigc"></canvas><span class="hint">Sign here with your finger</span><button type="button" class="btn sm" data-action="sig-clear" data-v="sigc">Clear</button></div>
+    <label class="check" style="display:flex;gap:8px;align-items:flex-start;margin:10px 0"><input type="checkbox" id="sig-agree"> <span class="small">${role === "manager" ? "I sign on behalf of " + esc(S.orgName) + " and agree to these terms." : "I have read and understood this contract and agree to its terms."}</span></label>
+    <div class="row-actions"><button class="btn primary" data-action="k-sign-do" data-role="${esc(role)}" data-v="${esc(id)}">Sign</button><button class="btn" data-action="k-view" data-v="${esc(id)}">Back</button></div>`);
+  setTimeout(() => initSigPad("sigc"), 30);
+}
+function initSigPad(id) {
+  const c = document.getElementById(id); if (!c) return;
+  const r = c.getBoundingClientRect(), dpr = Math.max(1, window.devicePixelRatio || 1);
+  c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  const ctx = c.getContext("2d"); ctx.scale(dpr, dpr); ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = 2.4; ctx.strokeStyle = "#022353";
+  let drawing = false, last = null;
+  const pos = e => { const b = c.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+  c.onpointerdown = e => { drawing = true; last = pos(e); c.setPointerCapture(e.pointerId); ctx.beginPath(); ctx.arc(last.x, last.y, 1.1, 0, Math.PI * 2); ctx.fillStyle = "#022353"; ctx.fill(); c.dataset.drawn = "1"; const h = c.parentNode.querySelector(".hint"); if (h) h.style.display = "none"; e.preventDefault(); };
+  c.onpointermove = e => { if (!drawing) return; const p = pos(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; c.dataset.strokes = String((+c.dataset.strokes || 0) + 1); e.preventDefault(); };
+  c.onpointerup = c.onpointercancel = () => { drawing = false; };
+}
+function clearSig(id) { const c = document.getElementById(id); if (!c) return; c.getContext("2d").clearRect(0, 0, c.width, c.height); c.dataset.drawn = ""; c.dataset.strokes = "0"; const h = c.parentNode.querySelector(".hint"); if (h) h.style.display = ""; }
+function sigImage(id) {
+  const c = document.getElementById(id); if (!c || c.dataset.drawn !== "1" || (+c.dataset.strokes || 0) < 8) return null;
+  const out = document.createElement("canvas"), w = 480, h = Math.round(c.height * w / c.width);
+  out.width = w; out.height = h; out.getContext("2d").drawImage(c, 0, 0, w, h);
+  return out.toDataURL("image/png");
+}
+async function doSign(id, role) {
+  const k = kById(id); if (!k) return;
+  const name = String((document.getElementById("sig-name") || {}).value || "").trim().slice(0, 80);
+  if (name.length < 3) { toast("Type your full name"); return; }
+  if (!(document.getElementById("sig-agree") || {}).checked) { toast("Tick the box to confirm you agree"); return; }
+  const image = sigImage("sigc"); if (!image) { toast("Draw your signature in the box"); return; }
+  if (image.length > 78000) { toast("That signature is too detailed. Clear it and sign again more simply."); return; }
+  const sig = { name, image, at: S.raw.TS, uid: S.uid, hash: k.bodyHash || "", device: String(navigator.userAgent || "").slice(0, 120) };
+  let upd;
+  if (role === "manager") upd = { managerSig: sig, status: k.driverSig ? "signed" : k.status, updatedAt: new Date().toISOString() };
+  else { if (role === "driver_in_person") { sig.method = "in_person"; sig.witness = S.me.name || ""; } upd = { driverSig: sig, status: k.managerSig ? "signed" : "driver_signed", updatedAt: new Date().toISOString() }; }
+  const work = S.raw.doc(`${fleetBase()}/contracts/${id}`).update(upd);
+  const r = await Promise.race([work.then(() => "ok", e => e), new Promise(res => setTimeout(() => res("slow"), 8000))]);
+  if (r !== "ok" && r !== "slow") { toast("Couldn't sign: " + errText(r)); return; }
+  const done = upd.status === "signed";
+  if (role === "driver") postEvent(S.fleet, "staff", "contract", `${name} signed their contract. It needs a manager's signature.`);
+  if (done) { postEvent(S.fleet, "driver:" + k.driverId, "contract", "Your contract is fully signed. You can download a copy from your page."); if (S.mode === "staff") postEvent(S.fleet, "owners", "contract", `Contract signed with ${driverNameSafe(k.driverId)}${k.carPlate ? " for " + k.carPlate : ""}`); }
+  toast(done ? "Contract fully signed" : "Signed");
+  setTimeout(() => openContract(id), 400);
+}
+function formEndContract(id) {
+  const k = kById(id); if (!k) return;
+  const signed = k.status === "signed";
+  openForm(signed ? "End contract" : "Cancel contract", [
+    { id: "endedOn", label: signed ? "Ended on" : "Cancelled on", type: "date", value: todayStr(), half: true },
+    { id: "endReason", label: "Reason", value: "", placeholder: signed ? "e.g. Driver left, renewed, notice given" : "e.g. Wrong details" }
+  ], async v => {
+    const ok = await save(() => S.db.doc(`contracts/${id}`).update({ status: signed ? "ended" : "void", endedOn: v.endedOn || todayStr(), endReason: String(v.endReason || "").slice(0, 200), updatedAt: new Date().toISOString() }), signed ? "Contract ended" : "Contract cancelled");
+    if (ok) postEvent(S.fleet, "driver:" + k.driverId, "contract", signed ? `Your contract ended on ${fmtDate(v.endedOn || todayStr())}.` : "A contract sent to you was cancelled.");
+    return ok;
+  });
+}
+
+// ---- Contract manager (Records → Contracts) ----
+function viewContracts() {
+  const tabs = REC_TABS();
+  const ks = (S.contracts || []).slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+  const T = todayStr();
+  const active = S.drivers.filter(d => d.status !== "left" && !(d.settlement && d.settlement.date));
+  const signedFor = id => ks.find(k => k.driverId === id && k.status === "signed" && (!k.end || k.end >= T));
+  const missing = active.filter(d => !signedFor(d.id));
+  const ending = ks.filter(k => k.status === "signed" && k.end && k.end >= T && dayDiff(T, k.end) <= 30);
+  const waiting = ks.filter(k => k.status === "sent" || k.status === "driver_signed");
+  const group = (title, rows) => rows.length ? `<h3>${title} <span class="small muted">${rows.length}</span></h3><div class="list">${rows.map(kRow).join("")}</div>` : "";
+  return `<div class="section"><div class="section-head"><h2>Records</h2></div>
+  <div class="section-head"><div class="seg">${tabs.map(([k, l]) => `<button data-action="more-tab" data-v="${k}" class="${k === "contracts" ? "on" : ""}">${l}</button>`).join("")}</div>${S.canManage ? `<button class="btn sm" data-action="k-template">Edit template</button>` : ""}</div>
+  <div class="grid kpis" style="margin-bottom:12px">
+    <div class="card kpi"><div class="label">Active drivers with a signed contract</div><div class="value num">${active.length - missing.length} / ${active.length}</div></div>
+    <div class="card kpi"><div class="label">Waiting for signatures</div><div class="value num">${waiting.length}</div></div>
+    <div class="card kpi"><div class="label">Ending within 30 days</div><div class="value num" style="color:${ending.length ? "var(--warn)" : "inherit"}">${ending.length}</div></div>
+  </div>
+  ${missing.length && S.mode === "staff" ? `<h3>No signed contract <span class="small muted">${missing.length}</span></h3><div class="list">${missing.map(d => `<div class="li"><div class="main"><div class="t">${esc(d.name)}</div><div class="small muted">${(ks.find(k => k.driverId === d.id && !["ended", "void"].includes(k.status)) ? kLabel(ks.find(k => k.driverId === d.id && !["ended", "void"].includes(k.status))) : "No contract yet")}</div></div><div class="end">${(() => { const open = ks.find(k => k.driverId === d.id && !["ended", "void"].includes(k.status)); return open ? `<button class="btn sm" data-action="k-view" data-v="${esc(open.id)}">Open</button>` : S.canManage ? `<button class="btn sm" data-action="k-new" data-v="${esc(d.id)}">Prepare</button>` : ""; })()}</div></div>`).join("")}</div>` : ""}
+  ${group("Waiting for signatures", waiting)}${group("Ending soon", ending)}
+  ${group("All contracts", ks.filter(k => S.mode === "staff" || k.status !== "draft"))}
+  ${!ks.length ? `<div class="card empty small">No contracts yet. Open a driver and tap <b>Prepare contract</b>.</div>` : ""}</div>`;
+}
+
+// ---- Contract PDF ----
+async function contractPdf(id) {
+  const k = kById(id); if (!k) return;
+  toast("Preparing the PDF…");
+  try { if (!window.jspdf) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"); }
+  catch (e) { toast("Couldn't load the PDF maker. Check your connection and try again."); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 18, CW = W - 2 * M; let y = 16;
+  const NAVY = [2, 35, 83], MUTED = [81, 98, 123], GREEN = [2, 189, 134];
+  const clean = t => String(t ?? "").replace(/[→]/g, "-").replace(/[^\x00-\xFF’‘“”–—·]/g, "");
+  const need = h => { if (y + h > 280) { doc.addPage(); y = 18; } };
+  const logo = await imgData("logo.png");
+  if (logo) { try { doc.addImage(logo, "PNG", M, y, 44, 8); } catch (e) {} }
+  doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...MUTED);
+  doc.text(clean(`Contract ${String(k.id).slice(0, 8).toUpperCase()} · ${kLabel(k)}`), W - M, y + 5, { align: "right" });
+  y += 14; doc.setDrawColor(...GREEN); doc.setLineWidth(0.8); doc.line(M, y, W - M, y); y += 8;
+  for (const raw of String(k.body).split("\n")) {
+    const line = raw.trimEnd();
+    if (!line) { y += 2.5; continue; }
+    const heading = /^[0-9]+\.\s+[A-Z][A-Z ,&'-]+$/.test(line) || /^[A-Z][A-Z ,&'-]{6,}$/.test(line);
+    doc.setFont("helvetica", heading ? "bold" : "normal"); doc.setFontSize(heading ? 11 : 10); doc.setTextColor(...NAVY);
+    const parts = doc.splitTextToSize(clean(line), CW); need(parts.length * 4.8 + 1);
+    doc.text(parts, M, y); y += parts.length * 4.8 + (heading ? 1.5 : 0.8);
+  }
+  y += 6; need(60);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.text("SIGNATURES", M, y); y += 6;
+  const colW = CW / 2 - 4;
+  const sigBox = (x, label, sg) => {
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...MUTED); doc.text(label, x, y);
+    if (sg && sg.image) { try { doc.addImage(sg.image, "PNG", x, y + 2, 56, 56 * 0.33); } catch (e) {} }
+    doc.setDrawColor(180, 190, 205); doc.setLineWidth(0.3); doc.line(x, y + 22, x + colW, y + 22);
+    doc.setTextColor(...NAVY); doc.setFontSize(9.5);
+    doc.text(clean(sg ? sg.name : "Not signed"), x, y + 27);
+    if (sg) { doc.setTextColor(...MUTED); doc.setFontSize(8); doc.text(doc.splitTextToSize(clean(`Signed electronically ${String(sg.at || "").replace("T", " ").slice(0, 16)} UTC${sg.method === "in_person" ? ", in person, witnessed by " + (sg.witness || "staff") : ""}`), colW), x, y + 31); }
+  };
+  sigBox(M, "Driver", k.driverSig); sigBox(M + colW + 8, `Manager, for ${S.orgName || "the Manager"}`, k.managerSig);
+  y += 44; need(20);
+  doc.setFontSize(7.5); doc.setTextColor(...MUTED);
+  doc.text(doc.splitTextToSize(clean(`Signed in DRYVR. Document fingerprint (SHA-256): ${k.bodyHash || "not recorded"}. The fingerprint was taken when the contract was sent; any change to the wording after that would produce a different fingerprint.`), CW), M, y);
+  const pages = doc.getNumberOfPages();
+  for (let pg = 1; pg <= pages; pg++) { doc.setPage(pg); doc.setFontSize(8); doc.setTextColor(...MUTED); doc.text(clean(`${k.title} · ${k.carPlate || ""} · page ${pg} of ${pages}`), W / 2, 290, { align: "center" }); }
+  doc.save(`DRYVR-contract-${String(k.carPlate || "").replace(/\s+/g, "")}-${k.start}.pdf`);
+}
+
 function ownerAdd() {
   const items = [];
   if (canSubmit()) items.push(["submit-expense", "Expense I paid", "Sent to your manager for approval"]);
@@ -2727,6 +3101,16 @@ document.addEventListener("click", async e => {
     case "inc-note": addIncidentNote(v); break;
     case "inc-geo": useLocation(); break;
     case "inc-abstract": formAbstract(v); break;
+    case "k-new": formContract(v); break;
+    case "k-view": openContract(v); break;
+    case "k-send": sendContract(v); break;
+    case "k-sign": openSignSheet(v, el.dataset.role || ""); break;
+    case "k-sign-do": doSign(v, el.dataset.role || ""); break;
+    case "k-pdf": contractPdf(v); break;
+    case "k-end": formEndContract(v); break;
+    case "k-delete": { if (!confirmTap(el, "Tap again to delete")) break; if (await save(() => S.db.doc(`contracts/${v}`).delete(), "Draft deleted")) closeSheet(); break; }
+    case "k-template": formTemplate(); break;
+    case "sig-clear": clearSig(v); break;
     case "inc-pdf": incidentPdf(v); break;
     case "inc-delete": { if (!confirmTap(el, "Tap again to delete")) break; if (await save(() => S.db.doc(`incidents/${v}`).delete(), "Incident deleted")) closeSheet(); break; }
     case "submit-expense": formSubmitExpense(); break;
@@ -2844,7 +3228,8 @@ const RECORD = /\/months\/[^/]+\/(payments|expenses|downtime|odo)\/[^/]+$/;
 // Values going in: server-time marker → serverTimestamp(); records get updatedBy (the rules require it).
 function enc(path, data) {
   const out = {};
-  for (const [k, v] of Object.entries(data || {})) { if (v === undefined) continue; out[k] = v === TS ? serverTimestamp() : v; }
+  const deep = v => v === TS ? serverTimestamp() : (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) ? Object.fromEntries(Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => [k, deep(x)])) : v;
+  for (const [k, v] of Object.entries(data || {})) { if (v === undefined) continue; out[k] = deep(v); }
   if (RECORD.test(path)) out.updatedBy = uid;
   return out;
 }
