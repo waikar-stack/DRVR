@@ -743,9 +743,9 @@ function loadFleet() {
     clearTimeout(timer);
     S[key] = snapRows(snap);
     S.coreReady[name] = true;
-    if (!snap.metadata.fromCache) setSync("Up to date");
+    syncFrom(snap);
     afterCore();
-  }, onErr));
+  }, onErr, { meta: true }));
   core("cars", "cars", "cars");
   core("drivers", "drivers", "drivers");
   core("assigns", "assignments", "assigns");
@@ -782,7 +782,7 @@ function startStaff(o) {
     clearTimeout(timer);
     S.fleets = snapRows(snap).sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
     S.fleetsReady = true;
-    if (!snap.metadata.fromCache) setSync("Up to date");
+    syncFrom(snap);
     for (const f of S.fleets) watchFleet(f.id);
     S.fleetMeta = S.fleets.find(f => f.id === S.fleet) || null;
     if (!S.fleet) {
@@ -790,7 +790,7 @@ function startStaff(o) {
       if (saved && S.fleets.some(f => f.id === saved) && S.view !== "owners") { selectFleet(saved); return; }
     }
     render();
-  }, e => { clearTimeout(timer); setSync("Data unavailable: " + errText(e)); }));
+  }, e => { clearTimeout(timer); setSync("Data unavailable: " + errText(e)); }, { meta: true }));
 }
 function watchFleet(fid) {
   watchEvents(fid, ["staff"]);
@@ -829,9 +829,9 @@ function startAccess(a) {
     S.mode = "driver"; S.role = "driver"; S.driverId = a.driverId;
     S.top.push(S.raw.doc(`${fleetBase()}/statements/${a.driverId}`).onSnapshot(s => {
       S.stmt = s.exists ? s.data() : null; S.stmtReady = true;
-      if (!s.metadata.fromCache) setSync("Up to date");
+      syncFrom(s);
       render();
-    }, e => { S.stmtReady = true; setSync("Data unavailable: " + errText(e)); render(); }));
+    }, e => { S.stmtReady = true; setSync("Data unavailable: " + errText(e)); render(); }, { meta: true }));
     S.top.push(S.raw.collection(`${fleetBase()}/submissions`).where("by", "==", S.uid).onSnapshot(snap => {
       S.mySubs = snapRows(snap).sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)));
       render();
@@ -959,7 +959,14 @@ async function refreshMonth(m, kind) {
   try { const snap = await S.db.collection(`months/${m}/${kind}`).get(); monthBucket(m)[kind] = snapRows(snap); render(); } catch (e) {}
 }
 
-function setSync(t) { document.getElementById("sync").textContent = t; }
+function setSync(t) { S.syncText = t; document.getElementById("sync").textContent = t; }
+// Called from the main listeners: cached data first, then the server confirms it
+function syncFrom(snap) {
+  if (!snap.metadata.fromCache) setSync(snap.metadata.hasPendingWrites ? "Saving…" : "Up to date");
+  else setSync(navigator.onLine ? "Syncing…" : "Offline · showing saved data");
+}
+window.addEventListener("offline", () => { if (S.raw) setSync("Offline · showing saved data"); });
+window.addEventListener("online", () => { if (S.raw) setSync("Syncing…"); });
 
 async function save(fn, okMsg) {
   if (!S.canWrite) { toast("You have view-only access"); return false; }
@@ -3970,7 +3977,7 @@ function D(path) {
     set: (d, opts) => setDoc(ref, enc(path, d), opts || {}),
     update: d => updateDoc(ref, enc(path, d)),
     delete: () => deleteDoc(ref),
-    onSnapshot: (next, err) => onSnapshot(ref, s => next(wrapDoc(s)), err)
+    onSnapshot: (next, err, o) => onSnapshot(ref, { includeMetadataChanges: !!(o && o.meta) }, s => next(wrapDoc(s)), err)
   };
 }
 function Q(base, cons = []) {
@@ -3980,7 +3987,7 @@ function Q(base, cons = []) {
     orderBy: (f, d) => Q(base, [...cons, orderBy(f, d)]),
     limit: n => Q(base, [...cons, limit(n)]),
     get: async () => wrapQuery(await getDocs(q())),
-    onSnapshot: (next, err) => onSnapshot(q(), s => next(wrapQuery(s)), err)
+    onSnapshot: (next, err, o) => onSnapshot(q(), { includeMetadataChanges: !!(o && o.meta) }, s => next(wrapQuery(s)), err)
   };
 }
 function C(path) {
