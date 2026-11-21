@@ -254,6 +254,33 @@ pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(-
 .member { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .member:last-child { border-bottom: 0; }
 .member select { width: auto; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+@media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } }
+.insp-sec { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); margin: 0 0 10px; }
+.insp-sec > summary { padding: 12px 14px; font-weight: 800; cursor: pointer; list-style: none; display: flex; justify-content: space-between; }
+.insp-sec > summary::-webkit-details-marker { display: none; }
+.insp-body { padding: 0 12px 12px; }
+.insp-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.insp-row .lbl { font-size: 14px; }
+.insp-row input, .insp-row select { font-size: 14px; }
+.insp-row .ctl { display: flex; gap: 6px; align-items: center; }
+.insp-row .ctl input[type=text], .insp-row .ctl input[type=number] { width: 110px; }
+.stbtns { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.stbtns button { border: 0; background: var(--surface); color: var(--muted); font: 700 12px/1 var(--font-body); padding: 8px 9px; cursor: pointer; }
+.stbtns button + button { border-left: 1px solid var(--line); }
+.stbtns button.on.ok { background: var(--good); color: #fff; } .stbtns button.on.soon { background: var(--warn); color: #fff; } .stbtns button.on.now { background: var(--bad); color: #fff; } .stbtns button.on.na { background: var(--muted); color: #fff; }
+.wgrid { display: grid; grid-template-columns: minmax(90px, 1.2fr) repeat(4, minmax(56px, 1fr)); gap: 6px; align-items: center; font-size: 13px; }
+.wgrid .h { font-weight: 800; text-align: center; color: var(--muted); font-size: 12px; }
+.wgrid input, .wgrid select { width: 100%; min-width: 0; padding: 6px 4px; font-size: 13px; text-align: center; }
+.wgrid .lbl { font-size: 13px; }
+.wgrid .now { border-color: var(--bad) !important; background: var(--bad-soft); } .wgrid .soon { border-color: var(--warn) !important; background: var(--warn-soft); }
+.rep-band { color: #fff; font-weight: 800; padding: 8px 12px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+.rep-band.now { background: var(--bad); } .rep-band.soon { background: var(--warn); } .rep-band.ok { background: var(--good); } .rep-band.plain { background: var(--brand-navy); }
+.rep-box { border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px; padding: 2px 12px; background: var(--surface); }
+.rep-box .li { padding: 8px 0; }
+.condtab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.condtab th, .condtab td { border-bottom: 1px solid var(--line); padding: 6px 6px; text-align: left; }
+.condtab td.st-ok { color: var(--good); font-weight: 700; } .condtab td.st-soon { color: var(--warn); font-weight: 700; } .condtab td.st-now { color: var(--bad); font-weight: 700; }
 .lb { display: flex; flex-direction: column; gap: 8px; }
 .lb-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
 .lb-row.low { border-color: var(--bad); }
@@ -382,7 +409,7 @@ const S = {
   db: null, raw: null, user: null, canWrite: true,
   role: null, fleet: null, fleets: [], fleetsReady: false, subsBy: {}, subWatch: {}, mySubs: [], ownerState: "loading", fleetMeta: null,
   mode: "loading", org: null, orgName: "", orgs: [], staffRole: null, canManage: false, isAdmin: false, accessRole: null, myAccess: [],
-  waiting: new Set(), recordsReady: false, stockItems: [], stockMoves: [], fleetCars: {}, perfKind: "cars", perfMetric: "score", stockQ: "", contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
+  waiting: new Set(), recordsReady: false, inspections: [], stockItems: [], stockMoves: [], fleetCars: {}, perfKind: "cars", perfMetric: "score", stockQ: "", contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
   cars: [], drivers: [], assigns: [], settings: { ...DEFAULT_SETTINGS },
   months: {},          // "YYYY-MM" -> {payments:[], expenses:[], downtime:[], odo:[]}
   loadedMonths: new Set(), subs: [], coreReady: { cars: false, drivers: false, assigns: false, settings: false },
@@ -567,6 +594,15 @@ function compute() {
 
   // Alerts
   const alerts = [];
+  for (const car of S.cars) {
+    if (car.soldDate && car.soldDate <= T) continue;
+    const last = latestInsp(car.id);
+    if (last) {
+      const open = inspFindings(last).filter(f => f.st === "now" && !f.fixed);
+      if (open.length) alerts.push({ sev: "bad", what: `${car.plate}: ${open.length} item${open.length === 1 ? "" : "s"} need${open.length === 1 ? "s" : ""} attention now`, why: `${open.slice(0, 3).map(f => f.label).join(", ")}${open.length > 3 ? "…" : ""} · inspection ${fmtDate(last.date)}`, link: "insp:" + last.id, sort: 6 });
+      if (S.mode === "staff" && dayDiff(last.date, T) > (Number(S.settings.inspectEveryDays) || 90)) alerts.push({ sev: "warn", what: `${car.plate} is due for an inspection`, why: `Last one ${fmtDate(last.date)}`, link: "car:" + car.id, sort: 28 });
+    }
+  }
   if (S.mode === "staff") for (const it of lowStock()) alerts.push({ sev: it.qty <= 0 ? "bad" : "warn", what: `${it.qty <= 0 ? "Out of stock" : "Low stock"}: ${it.name}`, why: `${fmtQty(it.qty)} ${it.unit || "pcs"} left · reorder at ${it.reorder}`, link: "stock:" + it.id, sort: 30 });
   if (S.mode === "staff") for (const d of drivers) {
     if (!d.assign) continue;
@@ -697,7 +733,7 @@ function resetFleetState() {
   S.subs = []; S.cars = []; S.drivers = []; S.assigns = []; S.settings = { ...DEFAULT_SETTINGS };
   S.months = {}; S.loadedMonths = new Set(); S.coreReady = { cars: false, drivers: false, assigns: false, settings: false };
   S.act = {}; S.vis = {}; S.actLoaded = false; S.detail = null; S.calc = null; S._sumKey = null; S.incidents = [];
-  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null; S.contracts = []; S.priv = {};
+  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null; S.contracts = []; S.priv = {}; S.inspections = [];
 }
 
 function loadFleet() {
@@ -715,6 +751,7 @@ function loadFleet() {
   core("assigns", "assignments", "assigns");
   // Incidents load alongside, without holding up the first screen
   S.subs.push(S.db.collection("incidents").onSnapshot(snap => { S.incidents = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
+  S.subs.push(S.db.collection("inspections").onSnapshot(snap => { S.inspections = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
   if (S.mode === "staff") S.subs.push(S.db.collection("contracts").onSnapshot(snap => { S.contracts = snapRows(snap); if (Object.values(S.coreReady).every(Boolean)) render(); }, () => {}));
   S.subs.push(S.db.doc("settings/main").onSnapshot(snap => {
     S.settings = { ...DEFAULT_SETTINGS, ...(snap.exists ? snap.data() : {}) };
@@ -1184,6 +1221,7 @@ function carDetail(c, id) {
   </div>
   <h3>Driver history</h3>
   <div class="list">${hist.map(a => `<div class="li"><div class="main"><div class="t">${esc(driverName(a.driverId))}</div><div class="small muted">${fmtDate(a.start)} → ${a.end ? fmtDate(a.end) : "now"} · ${ksh(a.rate)}/day · rest day ${a.restDay === "" || a.restDay == null ? "none" : DAYS[a.restDay]}</div></div>${S.canWrite ? `<div class="end"><button class="btn sm" data-action="edit-assign" data-v="${a.id}">Edit</button></div>` : ""}</div>`).join("") || `<div class="empty">No drivers assigned yet.</div>`}</div>
+  ${inspCard(id)}
   ${incSection((S.incidents || []).filter(i => i.carId === id))}
   <h3>Recent expenses</h3>${recordList("expenses", recs("expenses"))}
   <h3>Off-road days</h3>${recordList("downtime", recs("downtime"))}
@@ -1338,6 +1376,7 @@ function viewMore() {
   const recent = k => all(k).sort((a, b) => (b.date || b.from).localeCompare(a.date || a.from)).slice(0, 20);
   const tab = S.moreTab || "expenses";
   if ((S.moreTab || "expenses") === "incidents") return viewIncidents();
+  if ((S.moreTab || "expenses") === "inspections") return viewInspections();
   if ((S.moreTab || "expenses") === "contracts") { if (S.mode === "staff") return viewContracts(); S.moreTab = "expenses"; }
   const tabs = REC_TABS();
   const addAction = { expenses: "new-expense", downtime: "new-downtime", odo: "new-odo", payments: "new-payment" }[tab];
@@ -2761,7 +2800,7 @@ async function incidentPdf(id) {
 }
 
 /* ============ Driver private details & contracts ============ */
-const REC_TABS = () => [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"], ...(S.mode === "staff" ? [["contracts", "Contracts"]] : [])];
+const REC_TABS = () => [["expenses", "Expenses"], ["downtime", "Off-road days"], ["odo", "Mileage"], ["payments", "Payments"], ["incidents", "Incidents"], ["inspections", "Inspections"], ...(S.mode === "staff" ? [["contracts", "Contracts"]] : [])];
 async function loadPrivate(id) {
   if (S.priv[id] !== undefined || S.mode !== "staff") return S.priv[id];
   S.priv[id] = null;
@@ -3498,6 +3537,229 @@ function openItem(id) {
     <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? (x.packs && x.packSize > 1 ? `Received ${fmtQty(x.packs)} × ${fmtQty(x.packSize)} ${esc(it.unit || "")}` : "Received") : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : x.type === "price" ? "Price changed" : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "price" ? "" : (x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : "") + fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost * 100) / 100)} per ${esc(unitWord(it))}</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
 }
 
+/* ============ Vehicle inspections ============ */
+// Status: ok = fine, soon = future attention, now = immediate attention, na = not applicable
+const IN_ST = { ok: "OK", soon: "Soon", now: "Now", na: "N/A" };
+const WHEELS = [["FL", "Front left"], ["FR", "Front right"], ["RL", "Rear left"], ["RR", "Rear right"]];
+// Wheel checks: [key, label, kind, front/rear only?, thresholds mm [now, soon]]
+const WHEEL_ITEMS = [
+  ["tyreSize", "Tyre size", "text"], ["tyre", "Tyre condition", "st"], ["treadO", "Tread outer (mm)", "mm", null, [1.6, 3.5]], ["treadM", "Tread middle (mm)", "mm", null, [1.6, 3.5]], ["treadI", "Tread inner (mm)", "mm", null, [1.6, 3.5]],
+  ["pressure", "Tyre pressure", "st"], ["pad", "Brake pad (mm)", "mm", "front", [2, 4]], ["disc", "Brake disc", "st", "front"], ["lining", "Brake lining / drum", "st", "rear"],
+  ["shock", "Shock absorber", "st"], ["spring", "Coil spring", "st"], ["steer", "Steering parts", "st"]
+];
+const INSP_SECTIONS = [
+  ["spare", "Spare tyre", [["spare", "Spare tyre present", "st"]]],
+  ["dash", "Dashboard warning lights", [["engineLight", "Engine check light", "st"], ["absLight", "ABS / handbrake", "st"], ["tpms", "Tyre pressure (TPMS)", "st"], ["tracLight", "Traction control", "st"], ["battLight", "Battery light", "st"], ["ac", "Air conditioning", "st"]]],
+  ["front", "Exterior front", [["wiperL", "Wiper front left", "stv", "size"], ["wiperR", "Wiper front right", "stv", "size"], ["frontLights", "Front lights", "st"], ["windscreen", "Windscreen", "st"]]],
+  ["hood", "Under the hood", [["cabinFilter", "Cabin filter", "st"], ["airFilter", "Air filter", "st"], ["washer", "Washer fluid", "st"], ["brakeFluid", "Brake fluid level", "st"], ["powerSteer", "Power steering fluid", "st"], ["oilLevel", "Engine oil level", "st"], ["oilCond", "Engine oil condition", "st"], ["coolant", "Coolant level", "st"], ["plugs", "Spark plugs", "st"], ["belts", "Belts and hoses", "st"], ["hoodLeaks", "Leaks", "st"]]],
+  ["battery", "Battery", [["battery", "Battery test", "stv", "size"], ["battClamp", "Battery clamp and terminals", "st"]]],
+  ["safety", "Safety kit", [["triangle", "Safety triangle", "st"], ["extinguisher", "Fire extinguisher", "st"], ["firstAid", "First aid kit", "st"]]],
+  ["rear", "Exterior rear", [["wiperRear", "Rear wiper", "stv", "size"], ["rearLights", "Rear lights", "st"], ["body", "Body and paint", "st"]]],
+  ["under", "Under the body", [["underLeaks", "Leaks", "st"], ["exhaust", "Exhaust", "st"]]]
+];
+const inspById = id => (S.inspections || []).find(x => x.id === id);
+const latestInsp = carId => (S.inspections || []).filter(x => x.carId === carId).sort((a, b) => (b.date + (b.createdAt || "")).localeCompare(a.date + (a.createdAt || "")))[0];
+function wheelStatus(def, val) {
+  if (def[2] !== "mm") return "";
+  const v = parseFloat(val); if (!isFinite(v)) return "";
+  const [now, soon] = def[4]; return v < now ? "now" : v < soon ? "soon" : "ok";
+}
+// Flat list of everything that needs attention, from a saved inspection
+function inspFindings(x) {
+  const out = [], it = x.items || {}, rank = { now: 2, soon: 1 };
+  // the three tread readings of a tyre are reported together, at the status of the worst one
+  for (const [w, wl] of WHEELS) {
+    const ks = ["treadO", "treadM", "treadI"].map(t => `${t}.${w}`).filter(k => it[k]);
+    if (!ks.length) continue;
+    const worst = ks.map(k => ({ k, st: it[k].st || wheelStatus(WHEEL_ITEMS.find(d => d[0] === k.split(".")[0]), it[k].val) })).sort((a, b) => (rank[b.st] || 0) - (rank[a.st] || 0))[0];
+    if (worst.st === "now" || worst.st === "soon") out.push({ k: worst.k, st: worst.st, label: `Tyre tread ${wl.toLowerCase()}: ${ks.map(k => it[k].val).join(" / ")} mm`, section: "Wheels, tyres and brakes", note: "", fixed: it[worst.k].fixed || "" });
+  }
+  for (const d of WHEEL_ITEMS) for (const [w, wl] of WHEELS) {
+    if (d[0].startsWith("tread")) continue;
+    const k = `${d[0]}.${w}`, e = it[k]; if (!e) continue;
+    const st = e.st || wheelStatus(d, e.val);
+    if (st === "now" || st === "soon") out.push({ k, st, label: `${d[1].replace(/ \(mm\)/, "")} ${wl.toLowerCase()}${e.val ? ": " + e.val + (d[2] === "mm" ? " mm" : "") : ""}`, section: "Wheels, tyres and brakes", note: e.note || "", fixed: e.fixed || "" });
+  }
+  for (const [, sl, rows] of INSP_SECTIONS) for (const [key, label] of rows) {
+    const e = it[key]; if (!e) continue;
+    if (e.st === "now" || e.st === "soon") out.push({ k: key, st: e.st, label: label + (e.val ? ` (${e.val})` : ""), section: sl, note: e.note || "", fixed: e.fixed || "" });
+  }
+  return out;
+}
+function inspCounts(x) { const f = inspFindings(x); return { now: f.filter(i => i.st === "now").length, soon: f.filter(i => i.st === "soon").length, open: f.filter(i => i.st === "now" && !i.fixed).length }; }
+function inspRow(x) {
+  const c = inspCounts(x);
+  return `<div class="li" data-action="in-open" data-v="${esc(x.id)}" style="cursor:pointer"><div class="main"><div class="t">${plate(carLabel(x.carId))} ${fmtDate(x.date)}</div><div class="small muted">${[x.garage, x.mileage ? Number(x.mileage).toLocaleString() + " km" : ""].filter(Boolean).map(esc).join(" · ") || "Inspection"}</div></div><div class="end">${c.now ? pill("bad", c.open ? `${c.open} now` : "Fixed") : ""} ${c.soon ? pill("warn", `${c.soon} soon`) : ""} ${!c.now && !c.soon ? pill("good", "All OK") : ""}</div></div>`;
+}
+function inspCard(carId) {
+  const list = (S.inspections || []).filter(x => x.carId === carId).sort((a, b) => b.date.localeCompare(a.date));
+  if (!list.length && !S.canWrite) return "";
+  return `<div class="card"><div class="section-head" style="margin:0 0 6px"><h3 style="margin:0">Inspections</h3>${S.canWrite ? `<button class="btn sm${list.length ? "" : " primary"}" data-action="in-new" data-v="${esc(carId)}">New inspection</button>` : ""}</div>${list.length ? `<div class="list">${list.slice(0, 4).map(inspRow).join("")}</div>` : `<p class="small muted" style="margin:0">No inspections recorded yet.</p>`}</div>`;
+}
+function viewInspections() {
+  const tabs = REC_TABS();
+  const rows = (S.inspections || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const T = todayStr(), every = Number(S.settings.inspectEveryDays) || 90;
+  const live = S.cars.filter(c => !(c.soldDate && c.soldDate <= T));
+  const due = live.filter(c => { const l = latestInsp(c.id); return !l || dayDiff(l.date, T) > every; });
+  return `<div class="section"><div class="section-head"><h2>Records</h2></div>
+  <div class="section-head"><div class="seg">${tabs.map(([k, l]) => `<button data-action="more-tab" data-v="${k}" class="${k === "inspections" ? "on" : ""}">${l}</button>`).join("")}</div></div>
+  ${S.canWrite && live.length ? `<div class="card"><h3 style="margin-top:0">New inspection</h3><div class="row-actions">${live.map(c => `<button class="btn sm" data-action="in-new" data-v="${esc(c.id)}">${esc(c.plate)}</button>`).join("")}</div>${due.length ? `<p class="small muted" style="margin:8px 0 0">Due (none in ${every} days): ${due.map(c => esc(c.plate)).join(", ")}</p>` : ""}</div>` : ""}
+  ${rows.length ? `<div class="list">${rows.map(inspRow).join("")}</div>` : `<div class="card empty small">No inspections yet.${S.canWrite ? " Record one after each garage visit or monthly check." : " Your manager records them after each check."}</div>`}</div>`;
+}
+
+// ---- Form ----
+function stBtns(cur) { return `<span class="stbtns">${Object.entries(IN_ST).map(([k, l]) => `<button type="button" class="${k}${cur === k ? " on" : ""}" data-action="in-st" data-v="${k}">${l}</button>`).join("")}</span>`; }
+function formInspection(carId, rec) {
+  const car = carById(carId); if (!car) return;
+  const prev = rec ? null : latestInsp(carId);
+  const it = rec ? rec.items || {} : {};
+  const pv = k => (it[k] && it[k].val) || (prev && prev.items && prev.items[k] && /size/i.test(k + "") ? prev.items[k].val : "") || "";
+  // carry sizes forward from the last inspection (tyre and wiper/battery sizes rarely change)
+  const sizeFromPrev = k => rec ? (it[k] && it[k].val) || "" : (prev && prev.items && prev.items[k] && prev.items[k].val) || "";
+  const wheelCell = (d, w) => {
+    const k = `${d[0]}.${w}`, e = it[k] || {};
+    if (d[3] === "front" && w[0] === "R") return `<span class="small muted" style="text-align:center">–</span>`;
+    if (d[3] === "rear" && w[0] === "F") return `<span class="small muted" style="text-align:center">–</span>`;
+    if (d[2] === "text") return `<input data-wk="${k}" value="${esc(d[0] === "tyreSize" ? (e.val || sizeFromPrev(k)) : e.val || "")}" aria-label="${esc(d[1] + " " + w)}">`;
+    if (d[2] === "mm") { const st = wheelStatus(d, e.val); return `<input data-wk="${k}" data-mm="${d[4].join(",")}" type="number" step="any" inputmode="decimal" class="${st === "now" || st === "soon" ? st : ""}" value="${esc(e.val || "")}" aria-label="${esc(d[1] + " " + w)}">`; }
+    return `<select data-wk="${k}" aria-label="${esc(d[1] + " " + w)}"><option value=""></option>${Object.entries(IN_ST).map(([s2, l]) => `<option value="${s2}"${e.st === s2 ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+  };
+  const wheels = `<div class="wgrid"><span></span>${WHEELS.map(([w]) => `<span class="h">${w}</span>`).join("")}${WHEEL_ITEMS.map(d => `<span class="lbl">${esc(d[1])}</span>${WHEELS.map(([w]) => wheelCell(d, w)).join("")}`).join("")}</div>
+    <p class="small muted" style="margin:8px 0 0">FL front left · FR front right · RL rear left · RR rear right. Tread under 3.5 mm turns amber, under 1.6 mm red; brake pads under 4 mm amber, under 2 mm red.</p>`;
+  const secs = INSP_SECTIONS.map(([sk, sl, rows]) => `<details class="insp-sec"${sk === "hood" || sk === "front" ? " open" : ""}><summary>${esc(sl)}<span class="small muted">${rows.length}</span></summary><div class="insp-body">${rows.map(([key, label, kind, vlabel]) => { const e = it[key] || {};
+    return `<div class="insp-row" data-k="${key}"><div><div class="lbl">${esc(label)}</div>${kind === "stv" ? `<input type="text" data-val="${key}" placeholder="${esc(vlabel ? vlabel[0].toUpperCase() + vlabel.slice(1) : "")}" value="${esc(e.val || sizeFromPrev(key))}" style="margin-top:4px;width:100%;font-size:13px">` : ""}<input data-note="${key}" placeholder="Note" value="${esc(e.note || "")}" style="margin-top:4px;width:100%;font-size:13px"></div><div class="ctl">${stBtns(e.st)}</div></div>`; }).join("")}</div></details>`).join("");
+  S._inspEdit = { carId, id: rec ? rec.id : null };
+  openSheet(rec ? "Edit inspection" : `Inspection: ${car.plate}`, `
+    <div class="grid2">
+      <label class="fl">Date<input id="in-date" type="date" value="${esc(rec ? rec.date : todayStr())}"></label>
+      <label class="fl">Mileage (km)<input id="in-km" type="number" step="any" inputmode="decimal" value="${esc(rec ? rec.mileage || "" : "")}"></label>
+      <label class="fl">Garage / done by<input id="in-garage" value="${esc(rec ? rec.garage || "" : prev ? prev.garage || "" : "")}" placeholder="e.g. AutoXpress Embakasi"></label>
+      <label class="fl">Inspector<input id="in-inspector" value="${esc(rec ? rec.inspector || "" : "")}"></label>
+      <label class="fl">Report / job card no.<input id="in-ref" value="${esc(rec ? rec.ref || "" : "")}"></label>
+      <label class="fl">Estimate (KSh)<input id="in-estimate" type="number" step="any" value="${esc(rec ? rec.estimate || "" : "")}"></label>
+    </div>
+    <details class="insp-sec" open><summary>Wheels, tyres and brakes<span class="small muted">4 wheels</span></summary><div class="insp-body">${wheels}</div></details>
+    ${secs}
+    <label class="fl">Comments<textarea id="in-comments" rows="3" placeholder="e.g. Battery has no clamp">${esc(rec ? rec.comments || "" : "")}</textarea></label>
+    <p class="small muted">Leave anything you didn't check blank. Mark items <b>Soon</b> for future attention and <b>Now</b> for immediate attention; they appear at the top of the report and in Needs attention.</p>
+    <div class="row-actions"><button class="btn primary" data-action="in-save">Save inspection</button></div>`);
+}
+async function saveInspection() {
+  const ed = S._inspEdit; if (!ed) return;
+  const prevItems = ed.id ? (inspById(ed.id) || {}).items || {} : {};
+  const items = {};
+  document.querySelectorAll("#sheet [data-wk]").forEach(el => {
+    const k = el.dataset.wk, val = String(el.value || "").trim(); if (!val) return;
+    const def = WHEEL_ITEMS.find(d => d[0] === k.split(".")[0]);
+    items[k] = def && def[2] === "st" ? { st: val } : def && def[2] === "mm" ? { val, st: wheelStatus(def, val) } : { val };
+    if (prevItems[k] && prevItems[k].fixed) items[k].fixed = prevItems[k].fixed;
+  });
+  document.querySelectorAll("#sheet .insp-row[data-k]").forEach(row => {
+    const k = row.dataset.k, on = row.querySelector(".stbtns button.on"), val = (row.querySelector(`[data-val="${k}"]`) || {}).value, note = (row.querySelector(`[data-note="${k}"]`) || {}).value;
+    const e = {}; if (on) e.st = on.dataset.v; if (val && val.trim()) e.val = val.trim().slice(0, 40); if (note && note.trim()) e.note = note.trim().slice(0, 200);
+    if (prevItems[k] && prevItems[k].fixed && e.st === "now") e.fixed = prevItems[k].fixed;
+    if (Object.keys(e).length) items[k] = e;
+  });
+  const g = id => String((document.getElementById(id) || {}).value || "").trim();
+  const date = g("in-date") || todayStr(), km = Number(g("in-km")) || 0;
+  if (!Object.keys(items).length && !g("in-comments")) { toast("Fill in at least one check"); return; }
+  const data = { carId: ed.carId, date, mileage: km, garage: g("in-garage").slice(0, 120), inspector: g("in-inspector").slice(0, 80), ref: g("in-ref").slice(0, 60), estimate: Number(g("in-estimate")) || 0, comments: g("in-comments").slice(0, 1000), items, updatedAt: new Date().toISOString(), updatedBy: S.uid };
+  const ref = ed.id ? S.db.doc(`inspections/${ed.id}`) : S.db.collection("inspections").doc();
+  if (!ed.id) { data.createdAt = new Date().toISOString(); data.createdBy = S.uid; }
+  const ok = await save(async () => {
+    await ref.set(data, { merge: !!ed.id });
+    // the inspection mileage also feeds the service tracker
+    if (km > 0 && !ed.id) await writeRecord("odo", { carId: ed.carId, km, date, source: "inspection", note: "From inspection" }, null, true);
+  }, ed.id ? "Inspection updated" : "Inspection saved");
+  if (!ok) return;
+  if (!ed.id) { const c = inspCounts({ items }); postEvent(S.fleet, "owners", "inspection", `Inspection for ${carLabel(ed.carId)}: ${c.now ? c.now + " need attention now" : "nothing urgent"}${c.soon ? ", " + c.soon + " soon" : ""}`); }
+  S._inspEdit = null;
+  setTimeout(() => openInspection(ref.id), 300);
+}
+async function toggleFixed(arg) {
+  const [id, k] = arg.split("|"), x = inspById(id); if (!x || !x.items || !x.items[k]) return;
+  const items = JSON.parse(JSON.stringify(x.items));
+  items[k].fixed = items[k].fixed ? "" : todayStr();
+  if (await save(() => S.db.doc(`inspections/${id}`).update({ items, updatedAt: new Date().toISOString() }), items[k].fixed ? "Marked as fixed" : "Marked as not fixed")) setTimeout(() => openInspection(id), 250);
+}
+
+// ---- Report view ----
+function openInspection(id) {
+  const x = inspById(id); if (!x) { toast("Inspection not found"); return; }
+  const car = carById(x.carId) || {}, f = inspFindings(x), it = x.items || {};
+  const now = f.filter(i => i.st === "now"), soon = f.filter(i => i.st === "soon");
+  const finding = i => `<div class="li"><div class="main"><div class="t">${esc(i.label)}</div><div class="small muted">${esc(i.section)}${i.note ? " · " + esc(i.note) : ""}${i.fixed ? " · <b style='color:var(--good)'>fixed " + fmtDate(i.fixed) + "</b>" : ""}</div></div>${S.canWrite && i.st === "now" ? `<div class="end"><button class="btn sm" data-action="in-fix" data-v="${esc(x.id + "|" + i.k)}">${i.fixed ? "Undo" : "Fixed"}</button></div>` : ""}</div>`;
+  const stCell = e => { const st = e && (e.st || ""); return `<td class="st-${st}">${e ? esc([e.val, st ? IN_ST[st] : ""].filter(Boolean).join(" · ")) : "–"}</td>`; };
+  const wheelTable = `<div class="table-wrap"><table class="condtab"><thead><tr><th>Check</th>${WHEELS.map(([w, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>${WHEEL_ITEMS.filter(d => WHEELS.some(([w]) => it[`${d[0]}.${w}`])).map(d => `<tr><td>${esc(d[1])}</td>${WHEELS.map(([w]) => { const e = it[`${d[0]}.${w}`]; const st = e ? e.st || wheelStatus(d, e.val) : ""; return `<td class="st-${st}">${e ? esc(e.val || IN_ST[e.st] || "") : "–"}</td>`; }).join("")}</tr>`).join("")}</tbody></table></div>`;
+  const secTables = INSP_SECTIONS.map(([, sl, rows]) => { const used = rows.filter(([k]) => it[k]); if (!used.length) return "";
+    return `<div class="rep-band plain">${esc(sl)}</div><div class="rep-box"><table class="condtab"><tbody>${used.map(([k, label]) => `<tr><td>${esc(label)}${it[k].note ? `<div class="small muted">${esc(it[k].note)}</div>` : ""}</td>${stCell(it[k])}</tr>`).join("")}</tbody></table></div>`; }).join("");
+  openSheet(`Inspection report`, `
+    <div class="detail-grid">
+      <div><span>Car</span><b>${plate(car.plate || "")}</b><div class="small">${esc([car.make, car.model, car.year].filter(Boolean).join(" "))}</div></div>
+      <div><span>Date</span><b>${fmtDate(x.date)}</b></div>
+      <div><span>Mileage</span><b>${x.mileage ? Number(x.mileage).toLocaleString() + " km" : "—"}</b></div>
+      <div><span>Garage</span><b>${esc(x.garage || "—")}</b>${x.inspector ? `<div class="small">${esc(x.inspector)}</div>` : ""}</div>
+      ${x.ref ? `<div><span>Report no.</span><b>${esc(x.ref)}</b></div>` : ""}
+      ${x.estimate ? `<div><span>Estimate</span><b>${ksh(x.estimate)}</b></div>` : ""}
+    </div>
+    <div class="row-actions" style="margin-top:10px"><button class="btn sm" data-action="in-pdf" data-v="${esc(id)}">Download PDF</button>${S.canWrite ? `<button class="btn sm" data-action="in-edit" data-v="${esc(id)}">Edit</button>` : ""}${S.canManage ? `<button class="btn sm danger" data-action="in-del" data-v="${esc(id)}">Delete</button>` : ""}</div>
+    <div class="rep-band now"><span>Immediate attention</span><span>${now.length}</span></div><div class="rep-box">${now.length ? `<div class="list">${now.map(finding).join("")}</div>` : `<p class="small muted">Nothing.</p>`}</div>
+    <div class="rep-band soon"><span>Future attention</span><span>${soon.length}</span></div><div class="rep-box">${soon.length ? `<div class="list">${soon.map(finding).join("")}</div>` : `<p class="small muted">Nothing.</p>`}</div>
+    ${x.comments ? `<div class="rep-band plain">Comments</div><div class="rep-box"><p>${esc(x.comments)}</p></div>` : ""}
+    ${Object.keys(it).some(k => k.includes(".")) ? `<div class="rep-band plain">Wheels, tyres and brakes</div><div class="rep-box">${wheelTable}</div>` : ""}
+    ${secTables}`);
+}
+
+// ---- PDF ----
+async function inspectionPdf(id) {
+  const x = inspById(id); if (!x) return;
+  toast("Preparing the PDF…");
+  try { if (!window.jspdf) await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"); }
+  catch (e) { toast("Couldn't load the PDF maker. Check your connection and try again."); return; }
+  const { jsPDF } = window.jspdf, doc = new jsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 14, CW = W - 2 * M; let y = 14;
+  const NAVY = [2, 35, 83], MUTED = [81, 98, 123], RED = [179, 38, 30], AMBER = [154, 98, 0], GREEN = [29, 122, 62];
+  const clean = t => String(t ?? "").replace(/[→]/g, "-").replace(/[^\x00-\xFF’‘“”–—·]/g, "");
+  const need = h => { if (y + h > 282) { doc.addPage(); y = 16; } };
+  const car = carById(x.carId) || {}, it = x.items || {}, f = inspFindings(x);
+  const logo = await imgData("logo.png"); if (logo) { try { doc.addImage(logo, "PNG", M, y, 44, 8); } catch (e) {} }
+  doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.setTextColor(...NAVY); doc.text("Inspection report", W - M, y + 5, { align: "right" });
+  y += 14;
+  const meta = [["Vehicle", `${car.plate || ""}  ${[car.make, car.model, car.year].filter(Boolean).join(" ")}`], ["Date", fmtDate(x.date)], ["Mileage", x.mileage ? Number(x.mileage).toLocaleString() + " km" : "-"], ["Garage", [x.garage, x.inspector].filter(Boolean).join(" · ") || "-"], ["Report no.", x.ref || "-"], ["Fleet", (S.fleetMeta && S.fleetMeta.name) || S.settings.name || ""]];
+  doc.setFontSize(9.5);
+  meta.forEach(([k, v], i) => { const cx = M + (i % 2) * (CW / 2), cy = y + Math.floor(i / 2) * 6; doc.setFont("helvetica", "normal"); doc.setTextColor(...MUTED); doc.text(k, cx, cy); doc.setTextColor(...NAVY); doc.setFont("helvetica", "bold"); doc.text(clean(v), cx + 22, cy); });
+  y += 20;
+  const band = (title, color, count) => { need(12); doc.setFillColor(...color); doc.rect(M, y, CW, 7, "F"); doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text(clean(title), M + 2, y + 5); if (count != null) doc.text(String(count), W - M - 2, y + 5, { align: "right" }); y += 12; };
+  const line = (t, sub, color) => { const parts = doc.splitTextToSize(clean(t), CW - 4); need(parts.length * 4.6 + (sub ? 4.5 : 0) + 2); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...(color || NAVY)); doc.text(parts, M + 2, y); y += parts.length * 4.6; if (sub) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...MUTED); doc.text(clean(sub), M + 2, y); y += 4.5; } y += 1.5; };
+  const now = f.filter(i => i.st === "now"), soon = f.filter(i => i.st === "soon");
+  band("IMMEDIATE ATTENTION", RED, now.length); if (!now.length) line("Nothing", "", MUTED); now.forEach(i => line(i.label, [i.section, i.note, i.fixed ? "fixed " + fmtDate(i.fixed) : ""].filter(Boolean).join(" · "), RED));
+  band("FUTURE ATTENTION", AMBER, soon.length); if (!soon.length) line("Nothing", "", MUTED); soon.forEach(i => line(i.label, [i.section, i.note].filter(Boolean).join(" · "), AMBER));
+  if (x.comments) { band("COMMENTS", NAVY); line(x.comments, "", NAVY); }
+  const colorFor = st => st === "now" ? RED : st === "soon" ? AMBER : st === "ok" ? GREEN : NAVY;
+  const wRows = WHEEL_ITEMS.filter(d => WHEELS.some(([w]) => it[`${d[0]}.${w}`]));
+  if (wRows.length) {
+    band("WHEELS, TYRES AND BRAKES", NAVY);
+    const cw = [52, (CW - 52) / 4];
+    doc.setFontSize(8.5); doc.setFont("helvetica", "bold"); doc.setTextColor(...MUTED);
+    WHEELS.forEach(([, l], i) => doc.text(l, M + cw[0] + i * cw[1], y)); y += 5;
+    for (const d of wRows) { need(6); doc.setFont("helvetica", "normal"); doc.setTextColor(...NAVY); doc.text(clean(d[1]), M, y);
+      WHEELS.forEach(([w], i) => { const e = it[`${d[0]}.${w}`]; const st = e ? e.st || wheelStatus(d, e.val) : ""; doc.setTextColor(...colorFor(st)); doc.setFont("helvetica", st && st !== "ok" ? "bold" : "normal"); doc.text(clean(e ? e.val || IN_ST[e.st] || "" : "-"), M + cw[0] + i * cw[1], y); });
+      y += 5.2; }
+    y += 2;
+  }
+  for (const [, sl, rows] of INSP_SECTIONS) {
+    const used = rows.filter(([k]) => it[k]); if (!used.length) continue;
+    band(sl.toUpperCase(), NAVY);
+    for (const [k, label] of used) { const e = it[k]; need(6); doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...NAVY); doc.text(clean(label + (e.note ? " - " + e.note : "")), M, y);
+      doc.setTextColor(...colorFor(e.st)); doc.setFont("helvetica", "bold"); doc.text(clean([e.val, e.st ? IN_ST[e.st] : ""].filter(Boolean).join(" · ")), W - M, y, { align: "right" }); y += 5.2; }
+    y += 2;
+  }
+  const pages = doc.getNumberOfPages();
+  for (let pg = 1; pg <= pages; pg++) { doc.setPage(pg); doc.setFontSize(8); doc.setFont("helvetica", "normal"); doc.setTextColor(...MUTED); doc.text(clean(`${car.plate || ""} inspection ${fmtDate(x.date)} · page ${pg} of ${pages}`), W / 2, 290, { align: "center" }); }
+  doc.save(`DRYVR-inspection-${String(car.plate || "").replace(/\s+/g, "")}-${x.date}.pdf`);
+}
+
 function ownerAdd() {
   const items = [];
   if (canSubmit()) items.push(["submit-expense", "Expense I paid", "Sent to your manager for approval"]);
@@ -3523,7 +3785,7 @@ document.addEventListener("click", async e => {
     case "alerts-all": S.showAllAlerts = !S.showAllAlerts; render(); break;
     case "go": S.detail = null; location.hash = v; break;
     case "back": S.detail = null; render(); break;
-    case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } if (k === "stock") { location.hash = "stock"; setTimeout(() => openItem(id), 100); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
+    case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } if (k === "insp") { openInspection(id); break; } if (k === "stock") { location.hash = "stock"; setTimeout(() => openItem(id), 100); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
     case "close": closeSheet(); break;
     case "quick-add": if (S.mode === "owner") ownerAdd(); else quickAdd(); break;
     case "new-incident": formIncident(); break;
@@ -3535,6 +3797,14 @@ document.addEventListener("click", async e => {
     case "inc-geo": useLocation(); break;
     case "inc-abstract": formAbstract(v); break;
     case "k-new": formContract(v); break;
+    case "in-new": formInspection(v); break;
+    case "in-edit": { const x = inspById(v); if (x) formInspection(x.carId, x); break; }
+    case "in-open": openInspection(v); break;
+    case "in-save": saveInspection(); break;
+    case "in-st": { const row = el.closest("[data-k]"); if (!row) break; const was = el.classList.contains("on"); row.querySelectorAll(".stbtns button").forEach(b => b.classList.remove("on")); if (!was) el.classList.add("on"); break; }
+    case "in-fix": toggleFixed(v); break;
+    case "in-pdf": inspectionPdf(v); break;
+    case "in-del": { if (!confirmTap(el, "Tap again to delete")) break; if (await save(() => S.db.doc(`inspections/${v}`).delete(), "Inspection deleted")) closeSheet(); break; }
     case "perf-kind": S.perfKind = v; S.perfMetric = "score"; render(); break;
     case "perf-metric": S.perfMetric = v; render(); break;
     case "perf-open": { const [k, id] = v.split(":"); S.detail = v; location.hash = k === "car" ? "cars" : "drivers"; break; }
@@ -3611,6 +3881,7 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("input", e => {
+  if (e.target.dataset && e.target.dataset.mm) { const v = parseFloat(e.target.value), [now, soon] = e.target.dataset.mm.split(",").map(Number); e.target.classList.toggle("now", isFinite(v) && v < now); e.target.classList.toggle("soon", isFinite(v) && v >= now && v < soon); }
   if (e.target.id === "stock-q") { S.stockQ = e.target.value; const pos = e.target.selectionStart; render(); const el = document.getElementById("stock-q"); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) {} } }
 });
 document.addEventListener("change", async e => {
