@@ -254,6 +254,27 @@ pre.stmt { white-space: pre-wrap; background: var(--bg); border: 1px solid var(-
 .member { display: flex; align-items: center; gap: 8px; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .member:last-child { border-bottom: 0; }
 .member select { width: auto; }
+.lb { display: flex; flex-direction: column; gap: 8px; }
+.lb-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer; }
+.lb-row.low { border-color: var(--bad); }
+.lb-rank { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font: 800 14px/1 var(--font-display); background: var(--bg); color: var(--muted); }
+.lb-rank.r1 { background: #F5C518; color: #3b2f00; } .lb-rank.r2 { background: #C9D2DC; color: #22324a; } .lb-rank.r3 { background: #E2A26B; color: #3d1f05; }
+.lb-name { font-weight: 700; }
+.lb-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+.lb-bar { height: 6px; background: var(--line); border-radius: 4px; margin-top: 6px; overflow: hidden; }
+.lb-bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.lb-row.low .lb-bar i { background: var(--bad); }
+.lb-val { text-align: right; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lb-val small { display: block; font-weight: 500; color: var(--muted); font-size: 11.5px; }
+.chips-scroll { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin: 0 0 12px; }
+.chips-scroll button { flex: none; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 12px; font: 600 13px/1 var(--font-body); cursor: pointer; }
+.chips-scroll button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.reco { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.reco:last-child { border-bottom: 0; }
+.reco b.tag { flex: none; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 3px 8px; border-radius: 999px; height: fit-content; background: var(--accent-soft); color: var(--accent); }
+.reco b.tag.bad { background: var(--bad-soft); color: var(--bad); } .reco b.tag.good { background: var(--good-soft); color: var(--good); }
+.stock-low { color: var(--bad); font-weight: 700; }
+.search { width: 100%; margin: 0 0 10px; }
 .sigpad { position: relative; border: 2px dashed var(--line); border-radius: 10px; background: #fff; margin: 6px 0; touch-action: none; }
 .sigpad canvas { display: block; width: 100%; height: 160px; border-radius: 8px; cursor: crosshair; touch-action: none; }
 .sigpad .hint { position: absolute; left: 12px; bottom: 8px; font-size: 12px; color: #8090A8; pointer-events: none; }
@@ -361,7 +382,7 @@ const S = {
   db: null, raw: null, user: null, canWrite: true,
   role: null, fleet: null, fleets: [], fleetsReady: false, subsBy: {}, subWatch: {}, mySubs: [], ownerState: "loading", fleetMeta: null,
   mode: "loading", org: null, orgName: "", orgs: [], staffRole: null, canManage: false, isAdmin: false, accessRole: null, myAccess: [],
-  waiting: new Set(), recordsReady: false, contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
+  waiting: new Set(), recordsReady: false, stockItems: [], stockMoves: [], fleetCars: {}, perfKind: "cars", perfMetric: "score", stockQ: "", contracts: [], priv: {}, myPriv: null, template: null, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
   cars: [], drivers: [], assigns: [], settings: { ...DEFAULT_SETTINGS },
   months: {},          // "YYYY-MM" -> {payments:[], expenses:[], downtime:[], odo:[]}
   loadedMonths: new Set(), subs: [], coreReady: { cars: false, drivers: false, assigns: false, settings: false },
@@ -546,6 +567,7 @@ function compute() {
 
   // Alerts
   const alerts = [];
+  if (S.mode === "staff") for (const it of lowStock()) alerts.push({ sev: it.qty <= 0 ? "bad" : "warn", what: `${it.qty <= 0 ? "Out of stock" : "Low stock"}: ${it.name}`, why: `${fmtQty(it.qty)} ${it.unit || "pcs"} left · reorder at ${it.reorder}`, link: "stock:" + it.id, sort: 30 });
   if (S.mode === "staff") for (const d of drivers) {
     if (!d.assign) continue;
     const ks = (S.contracts || []).filter(k => k.driverId === d.id && k.status !== "ended" && k.status !== "void");
@@ -716,6 +738,8 @@ function startStaff(o) {
     if (mine && mine.role !== S.staffRole) { S.staffRole = mine.role; S.canManage = mine.role !== "clerk"; S.isAdmin = mine.role === "admin"; }
     render();
   }, () => {}));
+  S.top.push(S.raw.collection(`orgs/${o.id}/stockItems`).onSnapshot(snap => { S.stockItems = snapRows(snap); render(); }, () => {}));
+  S.top.push(S.raw.collection(`orgs/${o.id}/stockMoves`).onSnapshot(snap => { S.stockMoves = snapRows(snap); render(); }, () => {}));
   const timer = setTimeout(() => setSync("Can't reach the data yet. Check your connection."), 10000);
   S.top.push(S.raw.collection(`orgs/${o.id}/fleets`).onSnapshot(snap => {
     clearTimeout(timer);
@@ -961,6 +985,7 @@ function render() {
   if (S.mode === "welcome") { v.innerHTML = viewWelcome(); return; }
   if (S.mode === "join") { v.innerHTML = viewJoin(); return; }
   if (S.mode === "driver") { v.innerHTML = viewDriver(); return; }
+  if (S.mode === "staff" && S.view === "stock") { v.innerHTML = viewStock(); return; }
   if (S.mode === "staff" && (!S.fleet || S.view === "owners")) {
     if (!S.fleetsReady) { v.innerHTML = `<div class="card empty">Loading…</div>`; return; }
     v.innerHTML = viewOwners(); fillNames(); return;
@@ -1749,8 +1774,8 @@ const hbars = (rows, fmt) => {
 function viewInsights(c) {
   if (!S.cars.length || !S.drivers.length || !S.assigns.length) return onboarding();
   const tab = S.insTab || "business";
-  const seg = `<div class="seg" role="group" aria-label="Insight type">${[["business", "Business"], ["team", "Team activity"]].map(([k, l]) => `<button data-action="ins-tab" data-v="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
-  return `<div class="section"><div class="section-head"><h2>Insights</h2>${seg}</div></div>${tab === "team" ? insTeam(c) : insBusiness(c)}`;
+  const seg = `<div class="seg" role="group" aria-label="Insight type">${[["business", "Business"], ["perf", "Performance"], ...(S.mode === "staff" ? [["team", "Team activity"]] : [])].map(([k, l]) => `<button data-action="ins-tab" data-v="${k}" class="${tab === k ? "on" : ""}">${l}</button>`).join("")}</div>`;
+  return `<div class="section"><div class="section-head"><h2>Insights</h2>${seg}</div></div>${tab === "team" ? insTeam(c) : tab === "perf" ? insPerf(c) : insBusiness(c)}`;
 }
 
 function insBusiness(c) {
@@ -1949,9 +1974,10 @@ function renderChrome() {
   const nav = document.querySelector("nav.tabs"), fab = document.getElementById("fab");
   ban.innerHTML = ""; bar.innerHTML = "";
   if (S.mode === "staff") {
-    const n = pendingAll(), inOwners = !S.fleet || S.view === "owners";
+    const n = pendingAll(), inOwners = !S.fleet || S.view === "owners" || S.view === "stock";
     h1.textContent = inOwners ? (S.orgName || "Fleets") : (S.fleetMeta && S.fleetMeta.name) || S.settings.name || "Fleet";
-    if (!inOwners) bar.innerHTML = `<button class="btn sm" data-action="all-owners">← All fleets${n ? `<span class="count">${n}</span>` : ""}</button><span class="who">${esc(ROLE_LABEL[S.staffRole] || "Staff")} view · the owner sees only this fleet</span>`;
+    if (S.view === "stock") bar.innerHTML = `<button class="btn sm" data-action="${S.fleet ? "stock-back" : "all-owners"}">← ${S.fleet ? "Back to " + esc((S.fleetMeta && S.fleetMeta.name) || "fleet") : "All fleets"}</button><span class="who">Stock is shared by all your fleets</span>`;
+    else if (!inOwners) bar.innerHTML = `<button class="btn sm" data-action="all-owners">← All fleets${n ? `<span class="count">${n}</span>` : ""}</button><span class="who">${esc(ROLE_LABEL[S.staffRole] || "Staff")} view · the owner sees only this fleet</span>`;
     nav.style.display = inOwners ? "none" : "";
     if (inOwners) fab.style.display = "none";
   } else if (S.mode === "owner") {
@@ -2012,7 +2038,7 @@ function viewOwners() {
   const cur = f => f.summary && f.summary.month === m ? f.summary : null;
   const tot = fl.reduce((t, f) => { const s = cur(f); if (s) { t.collected += s.collected; t.expected += s.expected; t.net += s.net; } if (f.summary) { t.arrears += f.summary.arrears; t.cars += f.summary.cars; t.drivers += f.summary.drivers || 0; } return t; }, { collected: 0, expected: 0, net: 0, arrears: 0, cars: 0, drivers: 0 });
   const n = pendingAll();
-  const head = `<div class="section-head"><h2>Fleets</h2><div class="row-actions"><button class="btn sm" data-action="team">Team</button>${S.canManage ? `<button class="btn primary sm" data-action="new-fleet">Add fleet</button>` : ""}</div></div>`;
+  const head = `<div class="section-head"><h2>Fleets</h2><div class="row-actions"><button class="btn sm" data-action="team">Team</button><button class="btn sm" data-action="go" data-v="stock">Stock${lowStock().length ? `<span class="count">${lowStock().length}</span>` : ""}</button>${S.canManage ? `<button class="btn primary sm" data-action="new-fleet">Add fleet</button>` : ""}</div></div>`;
   if (!fl.length) return `<div class="section">${head}<div class="card"><h3>Set up your first fleet</h3><div class="steps small">
     <p>1. Tap <b>Add fleet</b> and name it after the owner, e.g. “Mwangi Fleet”. Your own cars can be a fleet too.</p>
     <p>2. On the fleet, tap <b>People</b> → <b>Invite owner</b> and send them the link by WhatsApp.</p>
@@ -3065,6 +3091,329 @@ async function contractPdf(id) {
   doc.save(`DRYVR-contract-${String(k.carPlate || "").replace(/\s+/g, "")}-${k.start}.pdf`);
 }
 
+/* ============ Performance tracker ============ */
+function oddsBy(carId) {
+  const r = [];
+  for (const x of all("odo")) if (x.carId === carId) r.push({ date: x.date, km: Number(x.km) || 0 });
+  for (const x of all("expenses")) if (x.carId === carId && x.odometer) r.push({ date: x.date, km: Number(x.odometer) || 0 });
+  return r.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.km - b.km);
+}
+function kmBetween(reads, a, b) {
+  const inside = reads.filter(x => x.date >= a && x.date <= b); if (!inside.length) return 0;
+  const before = reads.filter(x => x.date < a).pop();
+  return Math.max(0, inside[inside.length - 1].km - (before ? before.km : inside[0].km));
+}
+// Score 0-100 from several metrics: each is scaled between the worst and best in the group, then weighted
+function scoreRows(rows, defs) {
+  for (const d of defs) {
+    const vals = rows.map(r => r[d.key]).filter(v => isFinite(v));
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+    for (const r of rows) { const v = r[d.key]; r["_s_" + d.key] = !isFinite(v) ? null : hi === lo ? 1 : d.low ? (hi - v) / (hi - lo) : (v - lo) / (hi - lo); }
+  }
+  for (const r of rows) {
+    let w = 0, t = 0;
+    for (const d of defs) { const v = r["_s_" + d.key]; if (v == null || !d.weight) continue; w += d.weight; t += v * d.weight; }
+    r.score = w ? Math.round(t / w * 100) : NaN;
+  }
+  return rows;
+}
+const MAINT = ["Service", "Repairs & parts", "Tyres"];
+function perfCars(c) {
+  const { from, to } = c.P, T = c.T, end = to > T ? T : to;
+  const exP = all("expenses").filter(x => x.date >= from && x.date <= end);
+  const rows = c.cars.filter(x => !(x.soldDate && x.soldDate < from) && x.denomP > 0).map(x => {
+    const maint = exP.filter(e => e.carId === x.id && MAINT.includes(e.category)).reduce((t, e) => t + (Number(e.amount) || 0), 0);
+    const inc = (S.incidents || []).filter(i => i.carId === x.id && i.date >= from && i.date <= end).length;
+    return { id: x.id, kind: "car", name: carLabel(x.id), sub: [x.make, x.model].filter(Boolean).join(" "), model: [x.make, x.model].filter(Boolean).join(" ") || "Other",
+      net: x.net, netDay: x.denomP ? x.net / x.denomP : NaN, rev: x.revP, cost: x.costP, util: x.util, km: x.kmP, kmDay: x.earnP && x.kmP ? x.kmP / x.earnP : NaN,
+      costKm: x.kmP > 50 ? x.costP / x.kmP : NaN, maintKm: x.kmP > 50 ? maint / x.kmP : NaN, down: x.downP, inc, payback: x.payback, monthsLeft: x.monthsLeft, collRate: x.collRate };
+  });
+  return scoreRows(rows, [{ key: "netDay", weight: 40 }, { key: "util", weight: 25 }, { key: "costKm", weight: 20, low: true }, { key: "down", weight: 10, low: true }, { key: "inc", weight: 5, low: true }]);
+}
+function perfDrivers(c) {
+  const { from, to } = c.P, T = c.T, end = to > T ? T : to, TS = trackStart();
+  const rows = [];
+  for (const d of c.drivers) {
+    const as = S.assigns.filter(a => a.driverId === d.id && a.start <= end && (!a.end || a.end >= from));
+    if (!as.length) continue;
+    let due = 0, dueAmt = 0, worked = 0, absent = 0, km = 0, weeks = 0, wkRep = 0; const dueDays = [];
+    for (const a of as) {
+      const s0 = [a.start, from, TS].sort().pop(), e0 = [a.end || end, end].sort()[0];
+      if (s0 > e0) continue;
+      const dm = c.down[a.carId];
+      for (let day = s0; day <= e0; day = addDays(day, 1)) {
+        if (a.restDay !== "" && a.restDay != null && Number(a.restDay) === weekday(day)) continue;
+        const dn = dm && dm.get(day);
+        if (dn && dn.excused) continue;
+        if (dn) absent++; else worked++;
+        due++; dueAmt += Number(a.rate) || 0; dueDays.push({ day, rate: Number(a.rate) || 0 });
+      }
+      const reads = oddsBy(a.carId);
+      km += kmBetween(reads, s0, e0);
+      for (let w = s0; w <= e0; w = addDays(w, 7)) { const we = [addDays(w, 6), e0].sort()[0]; weeks++; if (reads.some(r => r.date >= w && r.date <= we)) wkRep++; }
+    }
+    if (!due) continue;
+    const pays = all("payments").filter(p => p.driverId === d.id && p.date >= from && p.date <= end).sort((a, b) => a.date.localeCompare(b.date));
+    const creds = all("expenses").filter(x => x.driverPaid && !x.chargeDriver && x.driverId === d.id && x.date >= from && x.date <= end);
+    const paid = pays.reduce((t, p) => t + (Number(p.amount) || 0), 0) + creds.reduce((t, x) => t + (Number(x.amount) || 0), 0);
+    // A working day counts if the driver paid something that day, or had already paid ahead to cover it
+    const payDays = new Set(pays.map(p => p.date));
+    let cumDue = 0, cumPaid = 0, pi = 0, onTime = 0;
+    for (const x of dueDays) { cumDue += x.rate; while (pi < pays.length && pays[pi].date <= x.day) cumPaid += Number(pays[pi++].amount) || 0; if (payDays.has(x.day) || cumPaid + 0.5 >= cumDue) onTime++; }
+    const charges = all("expenses").filter(x => x.chargeDriver && x.driverId === d.id && x.date >= from && x.date <= end).reduce((t, x) => t + (Number(x.amount) || 0), 0);
+    const inc = (S.incidents || []).filter(i => i.driverId === d.id && i.date >= from && i.date <= end).length;
+    rows.push({ id: d.id, kind: "driver", name: d.name, sub: d.assign ? carLabel(d.assign.carId) : "No car now",
+      coll: dueAmt + charges ? paid / (dueAmt + charges) : NaN, onTime: due ? onTime / due : NaN, absent, absentRate: due ? absent / due : 0, kmDay: worked && km ? km / worked : NaN,
+      report: weeks ? wkRep / weeks : NaN, charges, inc, behind: d.balance > 1 && d.rate ? d.daysBehind : 0, paid, due, worked });
+  }
+  return scoreRows(rows, [{ key: "coll", weight: 35 }, { key: "onTime", weight: 20 }, { key: "absentRate", weight: 15, low: true }, { key: "charges", weight: 10, low: true }, { key: "inc", weight: 5, low: true }, { key: "report", weight: 10 }, { key: "kmDay", weight: 5 }]);
+}
+const PERF_METRICS = {
+  cars: [
+    ["score", "Overall score", r => r.score, x => isFinite(x) ? x + "/100" : "—", false, "Profit per working day 40%, utilisation 25%, running cost per km 20%, days off road 10%, incidents 5%"],
+    ["netDay", "Profit per working day", r => r.netDay, x => isFinite(x) ? ksh(Math.round(x)) : "—", false, "Collected minus owner costs, divided by the days the car should have been working"],
+    ["net", "Net profit", r => r.net, x => ksh(Math.round(x)), false, "Collected minus owner costs in the period"],
+    ["util", "Utilisation", r => r.util, pct, false, "Share of working days the car was earning"],
+    ["costKm", "Running cost per km", r => r.costKm, x => isFinite(x) ? "KSh " + x.toFixed(1) : "—", true, "Owner costs ÷ km driven. Needs mileage readings."],
+    ["maintKm", "Maintenance per km", r => r.maintKm, x => isFinite(x) ? "KSh " + x.toFixed(1) : "—", true, "Service, repairs and tyres ÷ km driven"],
+    ["kmDay", "Km per earning day", r => r.kmDay, x => isFinite(x) ? Math.round(x) + " km" : "—", false, "How hard the car works when on the road"],
+    ["down", "Days off road", r => r.down, x => String(x), true, "Fewer is better"],
+    ["payback", "Paid back so far", r => r.payback, pct, false, "Lifetime net profit ÷ purchase price"]
+  ],
+  drivers: [
+    ["score", "Overall score", r => r.score, x => isFinite(x) ? x + "/100" : "—", false, "Collection 35%, paying every day 20%, absences 15%, mileage reporting 10%, charges 10%, incidents 5%, km per day 5%"],
+    ["coll", "Collection rate", r => r.coll, pct, false, "Paid ÷ what was due (fees and charges) in the period"],
+    ["onTime", "Pays every day", r => r.onTime, pct, false, "Share of working days with a payment that day, or already paid ahead"],
+    ["absentRate", "Absences", r => r.absentRate, x => pct(x), true, "Working days the driver didn't drive but was still charged"],
+    ["report", "Mileage reporting", r => r.report, pct, false, "Share of weeks with at least one odometer reading"],
+    ["kmDay", "Km per working day", r => r.kmDay, x => isFinite(x) ? Math.round(x) + " km" : "—", false, "Higher usually means more trips"],
+    ["charges", "Fines & damage charged", r => r.charges, x => ksh(Math.round(x)), true, "Fewer is better"],
+    ["behind", "Days behind now", r => r.behind, x => (x || 0).toFixed(1), true, "Current arrears in days"]
+  ]
+};
+function perfRecos(cars, drivers, c, kind) {
+  if (kind === "cars") drivers = []; else cars = [];
+  const out = [], med = a => { const v = a.filter(isFinite).sort((x, y) => x - y); return v.length ? v[Math.floor(v.length / 2)] : NaN; };
+  const cs = cars.filter(r => isFinite(r.score)).sort((a, b) => b.score - a.score);
+  if (cs.length > 1) out.push(["good", "Best car", `${cs[0].name} earns ${ksh(Math.round(cs[0].netDay))} net per working day, your strongest car this period.`]);
+  for (const r of cars) if (r.net < 0) out.push(["bad", "Losing money", `${r.name} cost more than it brought in (${ksh(Math.round(r.net))}). Check repairs and days off road before deciding whether to keep it.`]);
+  const mk = med(cars.map(r => r.costKm));
+  for (const r of cars) if (isFinite(r.costKm) && isFinite(mk) && cars.length > 2 && r.costKm > mk * 1.5) out.push(["bad", "Costly to run", `${r.name} costs KSh ${r.costKm.toFixed(1)}/km against a fleet middle of KSh ${mk.toFixed(1)}. Repeated repairs may mean it's time to sell.`]);
+  for (const r of cars) if (isFinite(r.util) && r.util < 0.75) out.push(["bad", "Idle too often", `${r.name} only earned on ${pct(r.util)} of working days. Cut repair time or find a steadier driver.`]);
+  const models = {};
+  for (const r of cars) if (isFinite(r.netDay)) (models[r.model] = models[r.model] || []).push(r.netDay);
+  const ms = Object.entries(models).map(([m, v]) => [m, v.reduce((a, b) => a + b, 0) / v.length]).sort((a, b) => b[1] - a[1]);
+  if (ms.length > 1) out.push(["info", "Buying", `${ms[0][0]} averages ${ksh(Math.round(ms[0][1]))} net per working day vs ${ms[ms.length - 1][0]} at ${ksh(Math.round(ms[ms.length - 1][1]))}. Favour the stronger model when you add cars.`]);
+  const pb = cars.filter(r => isFinite(r.monthsLeft) && r.monthsLeft > 0).sort((a, b) => a.monthsLeft - b.monthsLeft);
+  if (pb.length) out.push(["info", "Payback", `At recent rates, months left to earn back the purchase price: ${pb.map(r => `${r.name} ${Math.ceil(r.monthsLeft)}`).join(", ")}.`]);
+  const ds = drivers.filter(r => isFinite(r.score)).sort((a, b) => b.score - a.score);
+  if (ds.length > 1) out.push(["good", "Best driver", `${ds[0].name} paid ${pct(ds[0].coll)} of what was due and paid on ${pct(ds[0].onTime)} of working days. Consider a bonus or first choice of car.`]);
+  for (const r of drivers) if (isFinite(r.coll) && r.coll < 0.85 && r.due >= 7) out.push(["bad", "Weak collection", `${r.name} paid only ${pct(r.coll)} of what was due. Talk to them, review the daily fee, or ask for a larger deposit.`]);
+  for (const r of drivers) if (r.absent >= 3) out.push(["bad", "Absences", `${r.name} missed ${r.absent} working days while still charged. Check whether the car is earning for you.`]);
+  for (const r of drivers) if (isFinite(r.report) && r.report < 0.5 && r.due >= 14) out.push(["info", "Mileage", `${r.name} sent mileage in only ${pct(r.report)} of weeks. Service reminders depend on it.`]);
+  return out.slice(0, 10);
+}
+function insPerf(c) {
+  const cars = perfCars(c), drivers = perfDrivers(c), kind = S.perfKind || "cars";
+  const rows = kind === "cars" ? cars : drivers, defs = PERF_METRICS[kind];
+  const m = defs.find(x => x[0] === S.perfMetric) || defs[0];
+  const [key, label, get, fmt, low, help] = m;
+  const sorted = rows.slice().sort((a, b) => { const x = get(a), y = get(b); if (!isFinite(x)) return 1; if (!isFinite(y)) return -1; return low ? x - y : y - x; });
+  const vals = sorted.map(get).filter(isFinite), best = low ? Math.min(...vals) : Math.max(...vals), worst = low ? Math.max(...vals) : Math.min(...vals);
+  const barW = v => !isFinite(v) || !vals.length ? 0 : best === worst ? 100 : Math.max(6, Math.round((low ? (worst - v) / (worst - best) : (v - worst) / (best - worst)) * 100));
+  const sub = r => kind === "cars"
+    ? `${esc(r.sub || "")}${r.sub ? " · " : ""}util ${pct(r.util)} · ${isFinite(r.costKm) ? "KSh " + r.costKm.toFixed(1) + "/km" : "no km"} · ${r.down} off`
+    : `${esc(r.sub)} · paid ${pct(r.coll)} · pays daily ${pct(r.onTime)}${r.absent ? " · " + r.absent + " absent" : ""}`;
+  const list = sorted.length ? sorted.map((r, i) => { const v = get(r), lowScore = key === "score" && isFinite(r.score) && r.score < 40 && sorted.length > 2;
+    return `<div class="lb-row${lowScore ? " low" : ""}" data-action="perf-open" data-v="${kind === "cars" ? "car" : "driver"}:${esc(r.id)}" role="button" tabindex="0">
+      <span class="lb-rank${isFinite(v) && i < 3 ? " r" + (i + 1) : ""}">${isFinite(v) ? i + 1 : "–"}</span>
+      <div><div class="lb-name">${kind === "cars" ? plate(r.name) : esc(r.name)}${lowScore ? ` <span class="small" style="color:var(--bad)">needs a look</span>` : ""}</div><div class="lb-sub">${sub(r)}</div><div class="lb-bar"><i style="width:${barW(v)}%"></i></div></div>
+      <div class="lb-val">${fmt(v)}${key !== "score" && isFinite(r.score) ? `<small>score ${r.score}</small>` : ""}</div></div>`; }).join("")
+    : `<div class="card empty small">No ${kind} with working days in this period.</div>`;
+  const table = kind === "cars"
+    ? `<table><thead><tr><th>Car</th><th class="r">Score</th><th class="r">Net/day</th><th class="r">Net</th><th class="r">Util.</th><th class="r">Cost/km</th><th class="r">Maint./km</th><th class="r">Km/day</th><th class="r">Off road</th><th class="r">Incidents</th><th class="r">Paid back</th></tr></thead><tbody>${cars.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).map(r => `<tr><td>${plate(r.name)}</td><td class="r">${isFinite(r.score) ? r.score : "—"}</td><td class="r">${isFinite(r.netDay) ? ksh(Math.round(r.netDay)) : "—"}</td><td class="r">${ksh(Math.round(r.net))}</td><td class="r">${pct(r.util)}</td><td class="r">${isFinite(r.costKm) ? r.costKm.toFixed(1) : "—"}</td><td class="r">${isFinite(r.maintKm) ? r.maintKm.toFixed(1) : "—"}</td><td class="r">${isFinite(r.kmDay) ? Math.round(r.kmDay) : "—"}</td><td class="r">${r.down}</td><td class="r">${r.inc}</td><td class="r">${pct(r.payback)}</td></tr>`).join("")}</tbody></table>`
+    : `<table><thead><tr><th>Driver</th><th class="r">Score</th><th class="r">Collection</th><th class="r">Pays daily</th><th class="r">Absent</th><th class="r">Mileage sent</th><th class="r">Km/day</th><th class="r">Charges</th><th class="r">Incidents</th><th class="r">Behind now</th></tr></thead><tbody>${drivers.slice().sort((a, b) => (b.score || 0) - (a.score || 0)).map(r => `<tr><td>${esc(r.name)}</td><td class="r">${isFinite(r.score) ? r.score : "—"}</td><td class="r">${pct(r.coll)}</td><td class="r">${pct(r.onTime)}</td><td class="r">${r.absent}</td><td class="r">${pct(r.report)}</td><td class="r">${isFinite(r.kmDay) ? Math.round(r.kmDay) : "—"}</td><td class="r">${ksh(Math.round(r.charges))}</td><td class="r">${r.inc}</td><td class="r">${(r.behind || 0).toFixed(1)}</td></tr>`).join("")}</tbody></table>`;
+  const recos = perfRecos(cars, drivers, c, kind);
+  return `<div class="section">
+    <div class="section-head"><div class="seg">${[["cars", "Cars"], ["drivers", "Drivers"]].map(([k, l]) => `<button data-action="perf-kind" data-v="${k}" class="${kind === k ? "on" : ""}">${l}</button>`).join("")}</div>${periodSeg()}</div>
+    <div class="chips-scroll" role="group" aria-label="Rank by">${defs.map(d => `<button data-action="perf-metric" data-v="${d[0]}" class="${d[0] === key ? "on" : ""}">${d[1]}</button>`).join("")}</div>
+    <p class="small muted" style="margin:-4px 0 10px">${esc(label)}: ${esc(help)}. ${esc(c.P.label)}.</p>
+    <div class="lb">${list}</div>
+  </div>
+  ${recos.length ? `<div class="section"><div class="card"><h3 style="margin-top:0">What this tells you</h3>${recos.map(([t, tag, txt]) => `<div class="reco"><b class="tag ${t}">${esc(tag)}</b><div class="small">${esc(txt)}</div></div>`).join("")}</div></div>` : ""}
+  <div class="section"><div class="section-head"><h2>Side by side</h2></div><div class="card table-wrap">${table}</div>
+  <p class="small muted">Scores compare your ${kind} with each other: 100 is the best in the group on every measure, 0 the weakest. Cost per km and mileage measures need regular odometer readings.</p></div>`;
+}
+
+/* ============ Stock (spares and parts) — shared by all fleets in the organisation ============ */
+const STOCK_CATS = ["Oil & filters", "Brakes", "Tyres & wheels", "Battery & electrical", "Suspension & steering", "Engine parts", "Body & glass", "Fluids", "Tools & accessories", "Other"];
+const UNITS = ["pcs", "litres", "sets", "pairs", "kg"];
+const fmtQty = q => (Math.round(q * 100) / 100).toLocaleString();
+const stockCatToExpense = cat => cat === "Tyres & wheels" ? "Tyres" : cat === "Oil & filters" || cat === "Fluids" ? "Service" : "Repairs & parts";
+function stockLevels() {
+  const lv = {};
+  for (const it of S.stockItems) lv[it.id] = { qty: 0, avg: 0, value: 0, usedM: 0 };
+  const m = monthOf(todayStr());
+  const moves = S.stockMoves.slice().sort((a, b) => (a.date + (a.createdAt || "")).localeCompare(b.date + (b.createdAt || "")));
+  for (const x of moves) {
+    const l = lv[x.itemId]; if (!l) continue;
+    const q = Number(x.qty) || 0;
+    if (x.type === "in") { const cost = Number(x.unitCost) || 0; const nq = l.qty + q; l.avg = nq > 0 ? ((Math.max(l.qty, 0) * l.avg) + q * cost) / (Math.max(l.qty, 0) + q) : cost; l.qty = nq; }
+    else if (x.type === "out") { l.qty -= q; if (x.date && x.date.slice(0, 7) === m) l.usedM += q * (Number(x.unitCost) || l.avg); }
+    else if (x.type === "adjust") l.qty += q;
+  }
+  for (const l of Object.values(lv)) l.value = Math.max(0, l.qty) * l.avg;
+  return lv;
+}
+const stockItem = id => S.stockItems.find(i => i.id === id);
+function lowStock() {
+  if (S.mode !== "staff" || !S.stockItems.length) return [];
+  const lv = stockLevels();
+  return S.stockItems.filter(i => Number(i.reorder) > 0 && lv[i.id] && lv[i.id].qty <= Number(i.reorder)).map(i => ({ ...i, qty: lv[i.id].qty }));
+}
+function viewStock() {
+  const lv = stockLevels(), q = String(S.stockQ || "").toLowerCase();
+  const items = S.stockItems.filter(i => !q || [i.name, i.partNo, i.fits, i.category, i.supplier].join(" ").toLowerCase().includes(q)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  const value = Object.values(lv).reduce((t, l) => t + l.value, 0), used = Object.values(lv).reduce((t, l) => t + l.usedM, 0), low = lowStock();
+  const recent = S.stockMoves.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 12);
+  const moveTxt = x => { const it = stockItem(x.itemId) || {}; return x.type === "in" ? `Received ${fmtQty(x.qty)} ${it.unit || ""} ${esc(it.name || "")}${x.supplier ? " from " + esc(x.supplier) : ""}` : x.type === "out" ? `Used ${fmtQty(x.qty)} ${it.unit || ""} ${esc(it.name || "")} on ${esc(x.carPlate || "a car")}` : `Count adjusted ${x.qty > 0 ? "+" : ""}${fmtQty(x.qty)} ${esc(it.name || "")}${x.note ? " (" + esc(x.note) + ")" : ""}`; };
+  const byCat = {};
+  for (const i of items) (byCat[i.category || "Other"] = byCat[i.category || "Other"] || []).push(i);
+  const itemRow = i => { const l = lv[i.id] || { qty: 0, avg: 0, value: 0 }, isLow = Number(i.reorder) > 0 && l.qty <= Number(i.reorder);
+    return `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">${[i.partNo, i.fits].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</div></div><div class="end"><b class="num ${isLow ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(i.unit || "pcs")}</b><div class="small muted">${l.avg ? ksh(Math.round(l.avg)) + " each" : ""}</div></div></div>`; };
+  return `<div class="section"><div class="section-head"><h2>Stock</h2><div class="row-actions"><button class="btn sm" data-action="st-in">Receive stock</button><button class="btn sm" data-action="st-out">Use on a car</button><button class="btn primary sm" data-action="st-item">Add item</button></div></div>
+  <div class="grid kpis">
+    <div class="card kpi"><div class="label">Items</div><div class="value num">${S.stockItems.length}</div></div>
+    <div class="card kpi"><div class="label">Stock value</div><div class="value num">${ksh(Math.round(value))}</div><div class="sub">at average cost</div></div>
+    <div class="card kpi"><div class="label">Used this month</div><div class="value num">${ksh(Math.round(used))}</div><div class="sub">charged to cars as expenses</div></div>
+    <div class="card kpi"><div class="label">Low or out</div><div class="value num" style="color:${low.length ? "var(--bad)" : "inherit"}">${low.length}</div></div>
+  </div>
+  ${low.length ? `<div class="card" style="border-left:5px solid var(--bad)"><h3 style="margin-top:0">Reorder soon</h3><div class="list">${low.map(i => `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">Reorder at ${fmtQty(Number(i.reorder))}${i.supplier ? " · " + esc(i.supplier) : ""}</div></div><div class="end"><b class="stock-low">${fmtQty(i.qty)} left</b></div></div>`).join("")}</div></div>` : ""}
+  <input id="stock-q" class="search" type="search" placeholder="Search by name, part number, car model or supplier" value="${esc(S.stockQ || "")}" aria-label="Search stock">
+  ${S.stockItems.length ? Object.entries(byCat).sort().map(([cat, list]) => `<h3>${esc(cat)} <span class="small muted">${list.length}</span></h3><div class="list">${list.map(itemRow).join("")}</div>`).join("") || `<div class="card empty small">Nothing matches “${esc(S.stockQ)}”.</div>` : `<div class="card empty"><h3>Track your spares</h3><p class="small">Add the parts you keep in store, like oil, filters, brake pads and tyres. When you fit one to a car, tap <b>Use on a car</b>: stock goes down and the cost is added to that car's expenses automatically.</p></div>`}
+  ${recent.length ? `<h3>Recent movements</h3><div class="list">${recent.map(x => `<div class="li"><div class="main"><div class="t">${moveTxt(x)}</div><div class="small muted">${fmtDate(x.date)}${x.unitCost ? " · " + ksh(Math.round(x.unitCost)) + " each" : ""}${x.by ? " · " + esc(S.names[x.by] || (x.by === S.uid ? "You" : "Staff")) : ""}</div></div>${S.canManage ? `<div class="end"><button class="btn sm" data-action="st-undo" data-v="${esc(x.id)}">Undo</button></div>` : ""}</div>`).join("")}</div>` : ""}
+  </div>`;
+}
+function itemOpts() { const lv = stockLevels(); return [["", "Choose item"]].concat(S.stockItems.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map(i => [i.id, `${i.name} (${fmtQty((lv[i.id] || {}).qty || 0)} ${i.unit || "pcs"})`])); }
+function formItem(rec) {
+  const r = rec || {};
+  openForm(rec ? "Edit item" : "Add a stock item", [
+    { id: "name", label: "Item", value: r.name || "", required: true, placeholder: "e.g. Oil filter" },
+    { id: "category", label: "Category", type: "select", options: STOCK_CATS, value: r.category || "Oil & filters", half: true },
+    { id: "unit", label: "Counted in", type: "select", options: UNITS, value: r.unit || "pcs", half: true },
+    { id: "partNo", label: "Part number", value: r.partNo || "", half: true },
+    { id: "fits", label: "Fits", value: r.fits || "", placeholder: "e.g. Axio, Fielder 2015+", half: true },
+    { id: "reorder", label: "Reorder when down to", type: "number", value: r.reorder ?? 2, half: true },
+    { id: "supplier", label: "Usual supplier", value: r.supplier || "", half: true },
+    ...(rec ? [] : [{ id: "openQty", label: "Opening stock", type: "number", value: "", half: true }, { id: "openCost", label: "Cost each (KSh)", type: "number", value: "", half: true }]),
+    { id: "notes", label: "Notes", type: "textarea", value: r.notes || "" }
+  ], async v => {
+    if (!v.name) return "Enter the item name";
+    if (!rec && v.openQty > 0 && !(v.openCost > 0)) return "Enter what each one cost";
+    const t = (x, n) => String(x || "").trim().slice(0, n);
+    const data = { name: t(v.name, 120), category: v.category, unit: v.unit, partNo: t(v.partNo, 60), fits: t(v.fits, 120), reorder: Math.max(0, Number(v.reorder) || 0), supplier: t(v.supplier, 120), notes: t(v.notes, 500), updatedAt: new Date().toISOString() };
+    const ref = rec ? S.raw.doc(`orgs/${S.org}/stockItems/${rec.id}`) : S.raw.collection(`orgs/${S.org}/stockItems`).doc();
+    return save(async () => {
+      await ref.set(data, { merge: true });
+      if (!rec && v.openQty > 0) await S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "in", itemId: ref.id, qty: Number(v.openQty), unitCost: Number(v.openCost), date: todayStr(), note: "Opening stock", by: S.uid, createdAt: new Date().toISOString() });
+    }, rec ? "Item updated" : "Item added");
+  }, { onDelete: rec && S.canManage ? () => { if (S.stockMoves.some(x => x.itemId === rec.id)) { toast("This item has movements. Adjust its count to zero instead."); return false; } return save(() => S.raw.doc(`orgs/${S.org}/stockItems/${rec.id}`).delete(), "Item deleted"); } : null });
+}
+function formReceive(itemId) {
+  if (!S.stockItems.length) { formItem(); return; }
+  const it = itemId ? stockItem(itemId) : null;
+  openForm("Receive stock", [
+    { id: "itemId", label: "Item", type: "select", options: itemOpts(), value: itemId || "", required: true },
+    { id: "qty", label: "Quantity", type: "number", value: "", required: true, half: true },
+    { id: "unitCost", label: "Cost each (KSh)", type: "number", value: "", required: true, half: true },
+    { id: "date", label: "Date", type: "date", value: todayStr(), half: true },
+    { id: "supplier", label: "Supplier", value: it ? it.supplier || "" : "", half: true },
+    { id: "ref", label: "Receipt or M-Pesa code", value: "" }
+  ], async v => {
+    if (!v.itemId) return "Choose the item"; if (!(v.qty > 0)) return "Enter the quantity"; if (!(v.unitCost >= 0)) return "Enter the cost";
+    return save(() => S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "in", itemId: v.itemId, qty: Number(v.qty), unitCost: Number(v.unitCost), date: v.date || todayStr(), supplier: String(v.supplier || "").slice(0, 120), ref: String(v.ref || "").slice(0, 40), by: S.uid, createdAt: new Date().toISOString() }), "Stock received");
+  }, { intro: "Buying stock doesn't charge any car. The cost goes to a car when a part is used on it." });
+}
+async function carsForFleet(fid) {
+  if (fid === S.fleet && S.cars.length) return S.cars;
+  if (S.fleetCars[fid]) return S.fleetCars[fid];
+  try { S.fleetCars[fid] = snapRows(await S.raw.collection(`${fleetBase(fid)}/cars`).get()).filter(c => !c.soldDate); } catch (e) { S.fleetCars[fid] = []; }
+  return S.fleetCars[fid];
+}
+async function formUse(itemId) {
+  if (!S.stockItems.length) { toast("Add stock items first"); return; }
+  const fleets = S.fleets.slice();
+  const lists = await Promise.all(fleets.map(f => carsForFleet(f.id)));
+  const carOptsAll = [["", "Choose car"]].concat(fleets.flatMap((f, i) => lists[i].map(c => [f.id + "|" + c.id, `${c.plate}${fleets.length > 1 ? " · " + (f.name || "") : ""}`])));
+  const lv = stockLevels();
+  openForm("Use on a car", [
+    { id: "itemId", label: "Item", type: "select", options: itemOpts(), value: itemId || "", required: true },
+    { id: "qty", label: "Quantity", type: "number", value: 1, required: true, half: true },
+    { id: "date", label: "Date fitted", type: "date", value: todayStr(), half: true },
+    { id: "car", label: "Car", type: "select", options: carOptsAll, value: S.fleet && S.detail && S.detail.startsWith("car:") ? S.fleet + "|" + S.detail.slice(4) : "", required: true },
+    { id: "odometer", label: "Odometer (km)", type: "number", value: "", half: true, hint: "Recorded on the expense; needed for service reminders" },
+    { id: "note", label: "Note", value: "", placeholder: "e.g. Fitted by Joseph, front left" }
+  ], async v => {
+    if (!v.itemId) return "Choose the item"; if (!(v.qty > 0)) return "Enter the quantity"; if (!v.car) return "Choose the car";
+    const it = stockItem(v.itemId), l = lv[v.itemId] || { qty: 0, avg: 0 };
+    if (v.qty > l.qty + 1e-9) return `Only ${fmtQty(l.qty)} ${it.unit || "pcs"} in stock. Receive more first, or adjust the count.`;
+    const [fid, carId] = v.car.split("|"), car = (await carsForFleet(fid)).find(c => c.id === carId) || {};
+    const unitCost = Math.round(l.avg * 100) / 100, amount = Math.round(unitCost * v.qty), m = monthOf(v.date || todayStr());
+    const mref = S.raw.collection(`orgs/${S.org}/stockMoves`).doc();
+    const exId = "stock_" + mref.id;
+    const ok = await save(async () => {
+      await mref.set({ type: "out", itemId: v.itemId, qty: Number(v.qty), unitCost, date: v.date || todayStr(), fleetId: fid, carId, carPlate: car.plate || "", expenseId: exId, expenseMonth: m, note: String(v.note || "").slice(0, 300), by: S.uid, createdAt: new Date().toISOString() });
+      const ex = { carId, category: stockCatToExpense(it.category), amount, date: v.date || todayStr(), vendor: "From stock", note: `${fmtQty(v.qty)} ${it.unit || "pcs"} × ${it.name}${v.note ? " · " + v.note : ""}`, source: "stock", moveId: mref.id, updatedAt: new Date().toISOString() };
+      if (v.odometer > 0) ex.odometer = Number(v.odometer);
+      await S.raw.doc(`${fleetBase(fid)}/months/${m}/expenses/${exId}`).set(ex);
+    }, `${it.name} used on ${car.plate || "the car"}`);
+    if (ok && fid === S.fleet) refreshMonth(m, "expenses");
+    return ok;
+  }, { intro: "Takes the part out of stock and adds its cost to the car's expenses at average cost." });
+}
+function formAdjust(itemId) {
+  const it = stockItem(itemId); if (!it) return;
+  const l = stockLevels()[itemId] || { qty: 0 };
+  openForm(`Count ${it.name}`, [
+    { id: "count", label: `How many are in the store now (${it.unit || "pcs"})?`, type: "number", value: fmtQty(l.qty).replace(/,/g, ""), required: true },
+    { id: "note", label: "Reason", value: "", placeholder: "e.g. Monthly count, damaged, lost" }
+  ], async v => {
+    const diff = Number(v.count) - l.qty;
+    if (!isFinite(diff)) return "Enter the count";
+    if (Math.abs(diff) < 1e-9) return true;
+    return save(() => S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "adjust", itemId, qty: diff, date: todayStr(), note: String(v.note || "Stock count").slice(0, 300), by: S.uid, createdAt: new Date().toISOString() }), "Count updated");
+  }, { intro: `The app thinks there ${l.qty === 1 ? "is" : "are"} ${fmtQty(l.qty)}. Enter what you actually counted.` });
+}
+async function undoMove(id) {
+  const x = S.stockMoves.find(m => m.id === id); if (!x) return;
+  const ok = await save(async () => {
+    if (x.type === "out" && x.fleetId && x.expenseId) await S.raw.doc(`${fleetBase(x.fleetId)}/months/${x.expenseMonth || monthOf(x.date)}/expenses/${x.expenseId}`).delete();
+    await S.raw.doc(`orgs/${S.org}/stockMoves/${id}`).delete();
+  }, x.type === "out" ? "Undone, and the car's expense removed" : "Undone");
+  if (ok && x.fleetId === S.fleet) refreshMonth(x.expenseMonth || monthOf(x.date), "expenses");
+}
+function openItem(id) {
+  const it = stockItem(id); if (!it) { toast("Item not found"); return; }
+  const l = stockLevels()[id] || { qty: 0, avg: 0, value: 0 };
+  const moves = S.stockMoves.filter(x => x.itemId === id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 20);
+  const used = S.stockMoves.filter(x => x.itemId === id && x.type === "out");
+  const byCar = {}; for (const x of used) byCar[x.carPlate || "?"] = (byCar[x.carPlate || "?"] || 0) + (Number(x.qty) || 0);
+  openSheet(it.name, `<div class="detail-grid">
+      <div><span>In stock</span><b class="${Number(it.reorder) > 0 && l.qty <= Number(it.reorder) ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(it.unit || "pcs")}</b></div>
+      <div><span>Average cost</span><b>${l.avg ? ksh(Math.round(l.avg)) : "—"}</b></div>
+      <div><span>Value</span><b>${ksh(Math.round(l.value))}</b></div>
+      <div><span>Reorder at</span><b>${fmtQty(Number(it.reorder) || 0)}</b></div>
+      <div><span>Part number</span><b>${esc(it.partNo || "—")}</b></div>
+      <div><span>Fits</span><b>${esc(it.fits || "—")}</b></div>
+      <div><span>Supplier</span><b>${esc(it.supplier || "—")}</b></div>
+      <div><span>Category</span><b>${esc(it.category || "")}</b></div>
+    </div>
+    ${it.notes ? `<p class="small">${esc(it.notes)}</p>` : ""}
+    <div class="row-actions" style="margin-top:12px"><button class="btn primary sm" data-action="st-out" data-v="${esc(id)}">Use on a car</button><button class="btn sm" data-action="st-in" data-v="${esc(id)}">Receive</button><button class="btn sm" data-action="st-adjust" data-v="${esc(id)}">Count</button><button class="btn sm" data-action="st-item" data-v="${esc(id)}">Edit</button></div>
+    ${Object.keys(byCar).length ? `<h3>Used on</h3><p class="small">${Object.entries(byCar).sort((a, b) => b[1] - a[1]).map(([p, q]) => `${esc(p)}: ${fmtQty(q)}`).join(" · ")}</p>` : ""}
+    <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? "Received" : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : ""}${fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost))} each</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
+}
+
 function ownerAdd() {
   const items = [];
   if (canSubmit()) items.push(["submit-expense", "Expense I paid", "Sent to your manager for approval"]);
@@ -3090,7 +3439,7 @@ document.addEventListener("click", async e => {
     case "alerts-all": S.showAllAlerts = !S.showAllAlerts; render(); break;
     case "go": S.detail = null; location.hash = v; break;
     case "back": S.detail = null; render(); break;
-    case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
+    case "open": { const [k, id] = v.split(":"); if (k === "incident") { openIncident(id); break; } if (k === "stock") { location.hash = "stock"; setTimeout(() => openItem(id), 100); break; } S.detail = v; closeSheet(); const tab = k === "car" ? "cars" : "drivers"; if (location.hash !== "#" + tab) location.hash = tab; else render(); window.scrollTo(0, 0); break; }
     case "close": closeSheet(); break;
     case "quick-add": if (S.mode === "owner") ownerAdd(); else quickAdd(); break;
     case "new-incident": formIncident(); break;
@@ -3102,6 +3451,17 @@ document.addEventListener("click", async e => {
     case "inc-geo": useLocation(); break;
     case "inc-abstract": formAbstract(v); break;
     case "k-new": formContract(v); break;
+    case "perf-kind": S.perfKind = v; S.perfMetric = "score"; render(); break;
+    case "perf-metric": S.perfMetric = v; render(); break;
+    case "perf-open": { const [k, id] = v.split(":"); S.detail = v; location.hash = k === "car" ? "cars" : "drivers"; break; }
+    case "stock-back": location.hash = "home"; break;
+    case "st-item": formItem(v ? stockItem(v) : null); break;
+    case "st-open": openItem(v); break;
+    case "st-in": formReceive(v); break;
+    case "st-out": formUse(v); break;
+    case "st-adjust": formAdjust(v); break;
+    case "st-undo": { if (!confirmTap(el, "Tap again to undo")) break; undoMove(v); break; }
+    case "st-del": { if (!confirmTap(el, "Tap again to delete")) break; if (await save(() => S.raw.doc(`orgs/${S.org}/stockItems/${v}`).delete(), "Item deleted")) closeSheet(); break; }
     case "k-view": openContract(v); break;
     case "k-send": sendContract(v); break;
     case "k-sign": openSignSheet(v, el.dataset.role || ""); break;
@@ -3165,6 +3525,9 @@ document.addEventListener("click", async e => {
     case "imp-go": runImport(); break;
   }
 });
+document.addEventListener("input", e => {
+  if (e.target.id === "stock-q") { S.stockQ = e.target.value; const pos = e.target.selectionStart; render(); const el = document.getElementById("stock-q"); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (x) {} } }
+});
 document.addEventListener("change", async e => {
   const el = e.target;
   if (el.dataset.roleFor) { if (await save(() => S.raw.doc(`orgs/${S.org}/members/${el.dataset.roleFor}`).update({ role: el.value }), "Role changed")) setTimeout(openTeam, 300); return; }
@@ -3186,8 +3549,8 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet()
 
 function route() {
   const h = (location.hash || "#home").slice(1);
-  const valid = ["home", "collect", "cars", "drivers", "insights", "more", "import", "settings", "owners"];
-  if (S.mode !== "staff" && (h === "import" || h === "settings" || h === "owners")) { if (h !== "home") { location.hash = "home"; return; } }
+  const valid = ["home", "collect", "cars", "drivers", "insights", "more", "import", "settings", "owners", "stock"];
+  if (S.mode !== "staff" && (h === "import" || h === "settings" || h === "owners" || h === "stock")) { if (h !== "home") { location.hash = "home"; return; } }
   const nv = valid.includes(h) ? h : "home";
   if (nv !== S.view) { if (!(S.detail && ((nv === "cars" && S.detail.startsWith("car:")) || (nv === "drivers" && S.detail.startsWith("driver:"))))) S.detail = null; }
   S.view = nv;
