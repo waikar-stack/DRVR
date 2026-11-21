@@ -3306,7 +3306,7 @@ function viewStock() {
   const byCat = {};
   for (const i of items) (byCat[i.category || "Other"] = byCat[i.category || "Other"] || []).push(i);
   const itemRow = i => { const l = lv[i.id] || { qty: 0, avg: 0, value: 0 }, isLow = Number(i.reorder) > 0 && l.qty <= Number(i.reorder);
-    return `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">${[i.code, i.partNo, i.fits].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</div></div><div class="end"><b class="num ${isLow ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(i.unit || "pcs")}</b><div class="small muted">${l.avg ? ksh(Math.round(l.avg)) + " each" : ""}</div></div></div>`; };
+    return `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">${[i.code, i.partNo, i.fits].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</div></div><div class="end"><b class="num ${isLow ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(i.unit || "pcs")}</b><div class="small muted">${l.avg ? ksh(Math.round(l.avg * 100) / 100) + " per " + esc(unitWord(i)) : ""}</div></div></div>`; };
   return `<div class="section"><div class="section-head"><h2>Stock</h2><div class="row-actions"><button class="btn sm" data-action="st-in">Receive stock</button><button class="btn sm" data-action="st-out">Use on a car</button><button class="btn primary sm" data-action="st-item">Add item</button></div></div>
   <div class="grid kpis">
     <div class="card kpi"><div class="label">Items</div><div class="value num">${S.stockItems.length}</div></div>
@@ -3317,7 +3317,7 @@ function viewStock() {
   ${low.length ? `<div class="card" style="border-left:5px solid var(--bad)"><h3 style="margin-top:0">Reorder soon</h3><div class="list">${low.map(i => `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">Reorder at ${fmtQty(Number(i.reorder))}${i.supplier ? " · " + esc(i.supplier) : ""}</div></div><div class="end"><b class="stock-low">${fmtQty(i.qty)} left</b></div></div>`).join("")}</div></div>` : ""}
   <input id="stock-q" class="search" type="search" placeholder="Search by name, code, part number, car or supplier" value="${esc(S.stockQ || "")}" aria-label="Search stock">
   ${S.stockItems.length ? Object.entries(byCat).sort().map(([cat, list]) => `<h3>${esc(cat)} <span class="small muted">${list.length}</span></h3><div class="list">${list.map(itemRow).join("")}</div>`).join("") || `<div class="card empty small">Nothing matches “${esc(S.stockQ)}”.</div>` : `<div class="card empty"><h3>Track your spares</h3><p class="small">Add the parts you keep in store, like oil, filters, brake pads and tyres. When you fit one to a car, tap <b>Use on a car</b>: stock goes down and the cost is added to that car's expenses automatically.</p></div>`}
-  ${recent.length ? `<h3>Recent movements</h3><div class="list">${recent.map(x => `<div class="li"><div class="main"><div class="t">${moveTxt(x)}</div><div class="small muted">${fmtDate(x.date)}${x.unitCost ? " · " + ksh(Math.round(x.unitCost)) + " each" : ""}${x.by ? " · " + esc(S.names[x.by] || (x.by === S.uid ? "You" : "Staff")) : ""}</div></div>${S.canManage ? `<div class="end"><button class="btn sm" data-action="st-undo" data-v="${esc(x.id)}">Undo</button></div>` : ""}</div>`).join("")}</div>` : ""}
+  ${recent.length ? `<h3>Recent movements</h3><div class="list">${recent.map(x => `<div class="li"><div class="main"><div class="t">${moveTxt(x)}</div><div class="small muted">${fmtDate(x.date)}${x.unitCost ? " · " + ksh(Math.round(x.unitCost * 100) / 100) + " per " + esc(unitWord(stockItem(x.itemId) || {})) : ""}${x.by ? " · " + esc(S.names[x.by] || (x.by === S.uid ? "You" : "Staff")) : ""}</div></div>${S.canManage ? `<div class="end"><button class="btn sm" data-action="st-undo" data-v="${esc(x.id)}">Undo</button></div>` : ""}</div>`).join("")}</div>` : ""}
   </div>`;
 }
 function itemOpts() { const lv = stockLevels(); return [["", "Choose item"]].concat(S.stockItems.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map(i => [i.id, `${i.code ? i.code + " · " : ""}${i.name} (${fmtQty((lv[i.id] || {}).qty || 0)} ${i.unit || "pcs"})`])); }
@@ -3330,9 +3330,11 @@ function formItem(rec) {
     { id: "code", label: "Item code", value: r.code || "", half: true, placeholder: "Made automatically", hint: rec ? "" : "Leave empty to create one, e.g. OIL-0001" },
     { id: "partNo", label: "Maker's part number", value: r.partNo || "", half: true },
     { id: "fits", label: "Fits", value: r.fits || "", placeholder: "e.g. Axio, Fielder 2015+", half: true },
+    { id: "packSize", label: "Usually bought in packs of", type: "number", value: r.packSize || "", half: true, placeholder: "e.g. 5", hint: "In the unit above, e.g. 5 for a 5-litre container. Leave empty if bought one by one." },
+    { id: "packName", label: "Pack is called", value: r.packName || "", half: true, placeholder: "e.g. container, box, drum" },
     { id: "reorder", label: "Reorder when down to", type: "number", value: r.reorder ?? 2, half: true },
     { id: "supplier", label: "Usual supplier", value: r.supplier || "", half: true },
-    ...(rec ? [] : [{ id: "openQty", label: "Opening stock", type: "number", value: "", half: true }, { id: "openCost", label: "Cost each (KSh)", type: "number", value: "", half: true }]),
+    ...(rec ? [] : [{ id: "openQty", label: "Opening stock (in the unit above)", type: "number", value: "", half: true }, { id: "openCost", label: "Cost per unit (KSh)", type: "number", value: "", half: true }]),
     { id: "notes", label: "Notes", type: "textarea", value: r.notes || "" }
   ], async v => {
     if (!v.name) return "Enter the item name";
@@ -3342,7 +3344,7 @@ function formItem(rec) {
     const others = S.stockItems.filter(i => !rec || i.id !== rec.id).map(i => i.code).filter(Boolean);
     if (code && others.includes(code)) return `Code ${code} is already used by another item`;
     if (!code) code = nextCode(v.category, others);
-    const data = { code, name: t(v.name, 120), category: v.category, unit: v.unit, partNo: t(v.partNo, 60), fits: t(v.fits, 120), reorder: Math.max(0, Number(v.reorder) || 0), supplier: t(v.supplier, 120), notes: t(v.notes, 500), updatedAt: new Date().toISOString() };
+    const data = { code, packSize: Number(v.packSize) > 0 ? Number(v.packSize) : 0, packName: t(v.packName, 30), name: t(v.name, 120), category: v.category, unit: v.unit, partNo: t(v.partNo, 60), fits: t(v.fits, 120), reorder: Math.max(0, Number(v.reorder) || 0), supplier: t(v.supplier, 120), notes: t(v.notes, 500), updatedAt: new Date().toISOString() };
     const ref = rec ? S.raw.doc(`orgs/${S.org}/stockItems/${rec.id}`) : S.raw.collection(`orgs/${S.org}/stockItems`).doc();
     return save(async () => {
       await ref.set(data, { merge: true });
@@ -3350,20 +3352,44 @@ function formItem(rec) {
     }, rec ? "Item updated" : `Item added as ${code}`);
   }, { onDelete: rec && S.canManage ? () => deleteItem(rec.id) : null });
 }
+// Buying in packs: e.g. 2 containers of 5 litres for KSh 5,000 = 10 litres at KSh 500 per litre
 function formReceive(itemId) {
   if (!S.stockItems.length) { formItem(); return; }
   const it = itemId ? stockItem(itemId) : null;
   openForm("Receive stock", [
     { id: "itemId", label: "Item", type: "select", options: itemOpts(), value: itemId || "", required: true },
-    { id: "qty", label: "Quantity", type: "number", value: "", required: true, half: true },
-    { id: "unitCost", label: "Cost each (KSh)", type: "number", value: "", required: true, half: true },
+    { id: "packs", label: "How many did you buy?", type: "number", value: "", required: true, half: true, hint: "Containers, boxes or pieces" },
+    { id: "size", label: "Each one holds", type: "number", value: it && it.packSize ? it.packSize : 1, half: true, hint: it ? `in ${it.unit || "pcs"}` : "in the item's unit" },
+    { id: "price", label: "Price", type: "number", value: "", required: true, half: true },
+    { id: "priceIs", label: "That price is", type: "select", options: [["each", "For each one"], ["total", "Total paid"]], value: "each", half: true },
     { id: "date", label: "Date", type: "date", value: todayStr(), half: true },
     { id: "supplier", label: "Supplier", value: it ? it.supplier || "" : "", half: true },
     { id: "ref", label: "Receipt or M-Pesa code", value: "" }
   ], async v => {
-    if (!v.itemId) return "Choose the item"; if (!(v.qty > 0)) return "Enter the quantity"; if (!(v.unitCost >= 0)) return "Enter the cost";
-    return save(() => S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "in", itemId: v.itemId, qty: Number(v.qty), unitCost: Number(v.unitCost), date: v.date || todayStr(), supplier: String(v.supplier || "").slice(0, 120), ref: String(v.ref || "").slice(0, 40), by: S.uid, createdAt: new Date().toISOString() }), "Stock received");
-  }, { intro: "Buying stock doesn't charge any car. The cost goes to a car when a part is used on it." });
+    const c = receiveCalc(v);
+    if (!v.itemId) return "Choose the item"; if (!(v.packs > 0)) return "Enter how many you bought"; if (!(v.size > 0)) return "Enter how much each one holds"; if (!(v.price >= 0) || v.price === "") return "Enter the price";
+    const item = stockItem(v.itemId);
+    return save(async () => {
+      await S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "in", itemId: v.itemId, qty: c.qty, unitCost: c.unitCost, packs: Number(v.packs), packSize: Number(v.size), totalPaid: c.total, date: v.date || todayStr(), supplier: String(v.supplier || "").slice(0, 120), ref: String(v.ref || "").slice(0, 40), by: S.uid, createdAt: new Date().toISOString() });
+      if (item && Number(v.size) > 1 && Number(item.packSize || 0) !== Number(v.size)) await S.raw.doc(`orgs/${S.org}/stockItems/${v.itemId}`).set({ packSize: Number(v.size) }, { merge: true });
+    }, `Added ${fmtQty(c.qty)} ${item ? item.unit || "pcs" : ""} at ${ksh(Math.round(c.unitCost))} each`);
+  }, { intro: `<span id="calc-preview">Enter what you bought and the price; the cost per ${it ? esc(unitWord(it)) : "unit"} is worked out for you.</span> Buying stock doesn't charge any car; the cost goes to a car when it's used.`,
+       onChange: (e, vals) => { if (e.target.id === "f-itemId") { const x = stockItem(vals.itemId); const el = document.getElementById("f-size"); if (el && x) el.value = x.packSize || 1; } updateCalc(); } });
+  const f = document.getElementById("the-form"); if (f) f.addEventListener("input", updateCalc);
+}
+const unitWord = it => ({ pcs: "piece", litres: "litre", sets: "set", pairs: "pair", kg: "kg" })[it.unit || "pcs"] || it.unit;
+function receiveCalc(v) {
+  const packs = Number(v.packs) || 0, size = Number(v.size) || 0, price = Number(v.price) || 0;
+  const qty = Math.round(packs * size * 1000) / 1000;
+  const total = v.priceIs === "total" ? price : price * packs;
+  return { qty, total: Math.round(total * 100) / 100, unitCost: qty ? Math.round(total / qty * 100) / 100 : 0 };
+}
+function updateCalc() {
+  const el = document.getElementById("calc-preview"); if (!el || !FORM) return;
+  const v = formVals(), it = stockItem(v.itemId); const c = receiveCalc(v);
+  if (!it || !(c.qty > 0) || !(Number(v.price) >= 0) || v.price === "") return;
+  const u = it.unit || "pcs";
+  el.innerHTML = `<b>= ${fmtQty(c.qty)} ${esc(u)} for ${ksh(c.total)}, that's ${ksh(c.unitCost)} per ${esc(unitWord(it))}.</b>${Number(v.size) > 1 ? ` (${ksh(Math.round(c.total / Number(v.packs)))} per ${esc(it.packName || "pack")})` : ""}`;
 }
 async function carsForFleet(fid) {
   if (fid === S.fleet && S.cars.length) return S.cars;
@@ -3379,7 +3405,7 @@ async function formUse(itemId) {
   const lv = stockLevels();
   openForm("Use on a car", [
     { id: "itemId", label: "Item", type: "select", options: itemOpts(), value: itemId || "", required: true },
-    { id: "qty", label: "Quantity", type: "number", value: 1, required: true, half: true },
+    { id: "qty", label: "Quantity", type: "number", value: 1, required: true, half: true, hint: "Part amounts are fine, e.g. 1.5 litres" },
     { id: "date", label: "Date fitted", type: "date", value: todayStr(), half: true },
     { id: "car", label: "Car", type: "select", options: carOptsAll, value: S.fleet && S.detail && S.detail.startsWith("car:") ? S.fleet + "|" + S.detail.slice(4) : "", required: true },
     { id: "odometer", label: "Odometer (km)", type: "number", value: "", half: true, hint: "Recorded on the expense; needed for service reminders" },
@@ -3457,7 +3483,7 @@ function openItem(id) {
   const byCar = {}; for (const x of used) byCar[x.carPlate || "?"] = (byCar[x.carPlate || "?"] || 0) + (Number(x.qty) || 0);
   openSheet(`${it.name}${it.code ? " · " + it.code : ""}`, `<div class="detail-grid">
       <div><span>In stock</span><b class="${Number(it.reorder) > 0 && l.qty <= Number(it.reorder) ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(it.unit || "pcs")}</b></div>
-      <div><span>Average cost</span><b>${l.avg ? ksh(Math.round(l.avg)) : "—"}</b></div>
+      <div><span>Cost per ${esc(unitWord(it))}</span><b>${l.avg ? ksh(Math.round(l.avg * 100) / 100) : "—"}</b>${it.packSize > 1 && l.avg ? `<div class="small muted">${ksh(Math.round(l.avg * it.packSize))} per ${fmtQty(it.packSize)}-${esc(it.unit === "litres" ? "litre" : unitWord(it))} ${esc(it.packName || "pack")}</div>` : ""}</div>
       <div><span>Value</span><b>${ksh(Math.round(l.value))}</b></div>
       <div><span>Reorder at</span><b>${fmtQty(Number(it.reorder) || 0)}</b></div>
       <div><span>Item code</span><b>${esc(it.code || "—")}</b></div>
@@ -3469,7 +3495,7 @@ function openItem(id) {
     ${it.notes ? `<p class="small">${esc(it.notes)}</p>` : ""}
     <div class="row-actions" style="margin-top:12px"><button class="btn primary sm" data-action="st-out" data-v="${esc(id)}">Use on a car</button><button class="btn sm" data-action="st-in" data-v="${esc(id)}">Receive</button><button class="btn sm" data-action="st-adjust" data-v="${esc(id)}">Count</button><button class="btn sm" data-action="st-price" data-v="${esc(id)}">Change price</button><button class="btn sm" data-action="st-item" data-v="${esc(id)}">Edit</button>${S.canManage ? `<button class="btn sm danger" data-action="st-del" data-v="${esc(id)}">Delete</button>` : ""}</div>
     ${Object.keys(byCar).length ? `<h3>Used on</h3><p class="small">${Object.entries(byCar).sort((a, b) => b[1] - a[1]).map(([p, q]) => `${esc(p)}: ${fmtQty(q)}`).join(" · ")}</p>` : ""}
-    <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? "Received" : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : x.type === "price" ? "Price changed" : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "price" ? "" : (x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : "") + fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost))} each</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
+    <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? (x.packs && x.packSize > 1 ? `Received ${fmtQty(x.packs)} × ${fmtQty(x.packSize)} ${esc(it.unit || "")}` : "Received") : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : x.type === "price" ? "Price changed" : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "price" ? "" : (x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : "") + fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost * 100) / 100)} per ${esc(unitWord(it))}</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
 }
 
 function ownerAdd() {
