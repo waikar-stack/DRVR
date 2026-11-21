@@ -3248,6 +3248,30 @@ function insPerf(c) {
 /* ============ Stock (spares and parts) — shared by all fleets in the organisation ============ */
 const STOCK_CATS = ["Oil & filters", "Brakes", "Tyres & wheels", "Battery & electrical", "Suspension & steering", "Engine parts", "Body & glass", "Fluids", "Tools & accessories", "Other"];
 const UNITS = ["pcs", "litres", "sets", "pairs", "kg"];
+// Item codes are made automatically from the category, e.g. OIL-0003, BRK-0012
+const CAT_PREFIX = { "Oil & filters": "OIL", "Brakes": "BRK", "Tyres & wheels": "TYR", "Battery & electrical": "ELE", "Suspension & steering": "SUS", "Engine parts": "ENG", "Body & glass": "BOD", "Fluids": "FLU", "Tools & accessories": "TLS", "Other": "OTH" };
+function nextCode(category, taken) {
+  const pfx = CAT_PREFIX[category] || "OTH";
+  const used = new Set((taken || S.stockItems.map(i => i.code)).filter(Boolean));
+  let n = 0;
+  for (const c of used) { const m = String(c).match(new RegExp("^" + pfx + "-(\\d+)$")); if (m) n = Math.max(n, +m[1]); }
+  let code; do { code = `${pfx}-${String(++n).padStart(4, "0")}`; } while (used.has(code));
+  return code;
+}
+async function ensureCodes() {
+  if (S._coding || !S.canWrite) return;
+  const missing = S.stockItems.filter(i => !i.code);
+  if (!missing.length) return;
+  S._coding = true;
+  const taken = S.stockItems.map(i => i.code).filter(Boolean);
+  try {
+    for (const it of missing.sort((a, b) => String(a.createdAt || a.updatedAt || "").localeCompare(String(b.createdAt || b.updatedAt || "")))) {
+      const code = nextCode(it.category, taken); taken.push(code);
+      await S.raw.doc(`orgs/${S.org}/stockItems/${it.id}`).set({ code }, { merge: true });
+    }
+  } catch (e) {}
+  S._coding = false;
+}
 const fmtQty = q => (Math.round(q * 100) / 100).toLocaleString();
 const stockCatToExpense = cat => cat === "Tyres & wheels" ? "Tyres" : cat === "Oil & filters" || cat === "Fluids" ? "Service" : "Repairs & parts";
 function stockLevels() {
@@ -3261,6 +3285,7 @@ function stockLevels() {
     if (x.type === "in") { const cost = Number(x.unitCost) || 0; const nq = l.qty + q; l.avg = nq > 0 ? ((Math.max(l.qty, 0) * l.avg) + q * cost) / (Math.max(l.qty, 0) + q) : cost; l.qty = nq; }
     else if (x.type === "out") { l.qty -= q; if (x.date && x.date.slice(0, 7) === m) l.usedM += q * (Number(x.unitCost) || l.avg); }
     else if (x.type === "adjust") l.qty += q;
+    else if (x.type === "price") l.avg = Number(x.unitCost) || 0;
   }
   for (const l of Object.values(lv)) l.value = Math.max(0, l.qty) * l.avg;
   return lv;
@@ -3273,14 +3298,15 @@ function lowStock() {
 }
 function viewStock() {
   const lv = stockLevels(), q = String(S.stockQ || "").toLowerCase();
-  const items = S.stockItems.filter(i => !q || [i.name, i.partNo, i.fits, i.category, i.supplier].join(" ").toLowerCase().includes(q)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  setTimeout(ensureCodes, 0);
+  const items = S.stockItems.filter(i => !q || [i.code, i.name, i.partNo, i.fits, i.category, i.supplier].join(" ").toLowerCase().includes(q)).sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const value = Object.values(lv).reduce((t, l) => t + l.value, 0), used = Object.values(lv).reduce((t, l) => t + l.usedM, 0), low = lowStock();
   const recent = S.stockMoves.slice().sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 12);
-  const moveTxt = x => { const it = stockItem(x.itemId) || {}; return x.type === "in" ? `Received ${fmtQty(x.qty)} ${it.unit || ""} ${esc(it.name || "")}${x.supplier ? " from " + esc(x.supplier) : ""}` : x.type === "out" ? `Used ${fmtQty(x.qty)} ${it.unit || ""} ${esc(it.name || "")} on ${esc(x.carPlate || "a car")}` : `Count adjusted ${x.qty > 0 ? "+" : ""}${fmtQty(x.qty)} ${esc(it.name || "")}${x.note ? " (" + esc(x.note) + ")" : ""}`; };
+  const moveTxt = x => { const it = stockItem(x.itemId) || {}; return x.type === "in" ? `Received ${fmtQty(x.qty)} ${it.unit || ""} ${esc(it.name || "")}${x.supplier ? " from " + esc(x.supplier) : ""}` : x.type === "out" ? `Used ${fmtQty(x.qty)} ${it.unit || ""} ${esc(it.name || "")} on ${esc(x.carPlate || "a car")}` : x.type === "price" ? `Price of ${esc(it.name || "")} set to ${ksh(Math.round(x.unitCost))}${x.note ? " (" + esc(x.note) + ")" : ""}` : `Count adjusted ${x.qty > 0 ? "+" : ""}${fmtQty(x.qty)} ${esc(it.name || "")}${x.note ? " (" + esc(x.note) + ")" : ""}`; };
   const byCat = {};
   for (const i of items) (byCat[i.category || "Other"] = byCat[i.category || "Other"] || []).push(i);
   const itemRow = i => { const l = lv[i.id] || { qty: 0, avg: 0, value: 0 }, isLow = Number(i.reorder) > 0 && l.qty <= Number(i.reorder);
-    return `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">${[i.partNo, i.fits].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</div></div><div class="end"><b class="num ${isLow ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(i.unit || "pcs")}</b><div class="small muted">${l.avg ? ksh(Math.round(l.avg)) + " each" : ""}</div></div></div>`; };
+    return `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">${[i.code, i.partNo, i.fits].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</div></div><div class="end"><b class="num ${isLow ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(i.unit || "pcs")}</b><div class="small muted">${l.avg ? ksh(Math.round(l.avg)) + " each" : ""}</div></div></div>`; };
   return `<div class="section"><div class="section-head"><h2>Stock</h2><div class="row-actions"><button class="btn sm" data-action="st-in">Receive stock</button><button class="btn sm" data-action="st-out">Use on a car</button><button class="btn primary sm" data-action="st-item">Add item</button></div></div>
   <div class="grid kpis">
     <div class="card kpi"><div class="label">Items</div><div class="value num">${S.stockItems.length}</div></div>
@@ -3289,19 +3315,20 @@ function viewStock() {
     <div class="card kpi"><div class="label">Low or out</div><div class="value num" style="color:${low.length ? "var(--bad)" : "inherit"}">${low.length}</div></div>
   </div>
   ${low.length ? `<div class="card" style="border-left:5px solid var(--bad)"><h3 style="margin-top:0">Reorder soon</h3><div class="list">${low.map(i => `<div class="li" data-action="st-open" data-v="${esc(i.id)}" style="cursor:pointer"><div class="main"><div class="t">${esc(i.name)}</div><div class="small muted">Reorder at ${fmtQty(Number(i.reorder))}${i.supplier ? " · " + esc(i.supplier) : ""}</div></div><div class="end"><b class="stock-low">${fmtQty(i.qty)} left</b></div></div>`).join("")}</div></div>` : ""}
-  <input id="stock-q" class="search" type="search" placeholder="Search by name, part number, car model or supplier" value="${esc(S.stockQ || "")}" aria-label="Search stock">
+  <input id="stock-q" class="search" type="search" placeholder="Search by name, code, part number, car or supplier" value="${esc(S.stockQ || "")}" aria-label="Search stock">
   ${S.stockItems.length ? Object.entries(byCat).sort().map(([cat, list]) => `<h3>${esc(cat)} <span class="small muted">${list.length}</span></h3><div class="list">${list.map(itemRow).join("")}</div>`).join("") || `<div class="card empty small">Nothing matches “${esc(S.stockQ)}”.</div>` : `<div class="card empty"><h3>Track your spares</h3><p class="small">Add the parts you keep in store, like oil, filters, brake pads and tyres. When you fit one to a car, tap <b>Use on a car</b>: stock goes down and the cost is added to that car's expenses automatically.</p></div>`}
   ${recent.length ? `<h3>Recent movements</h3><div class="list">${recent.map(x => `<div class="li"><div class="main"><div class="t">${moveTxt(x)}</div><div class="small muted">${fmtDate(x.date)}${x.unitCost ? " · " + ksh(Math.round(x.unitCost)) + " each" : ""}${x.by ? " · " + esc(S.names[x.by] || (x.by === S.uid ? "You" : "Staff")) : ""}</div></div>${S.canManage ? `<div class="end"><button class="btn sm" data-action="st-undo" data-v="${esc(x.id)}">Undo</button></div>` : ""}</div>`).join("")}</div>` : ""}
   </div>`;
 }
-function itemOpts() { const lv = stockLevels(); return [["", "Choose item"]].concat(S.stockItems.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map(i => [i.id, `${i.name} (${fmtQty((lv[i.id] || {}).qty || 0)} ${i.unit || "pcs"})`])); }
+function itemOpts() { const lv = stockLevels(); return [["", "Choose item"]].concat(S.stockItems.slice().sort((a, b) => String(a.name).localeCompare(String(b.name))).map(i => [i.id, `${i.code ? i.code + " · " : ""}${i.name} (${fmtQty((lv[i.id] || {}).qty || 0)} ${i.unit || "pcs"})`])); }
 function formItem(rec) {
   const r = rec || {};
   openForm(rec ? "Edit item" : "Add a stock item", [
     { id: "name", label: "Item", value: r.name || "", required: true, placeholder: "e.g. Oil filter" },
     { id: "category", label: "Category", type: "select", options: STOCK_CATS, value: r.category || "Oil & filters", half: true },
     { id: "unit", label: "Counted in", type: "select", options: UNITS, value: r.unit || "pcs", half: true },
-    { id: "partNo", label: "Part number", value: r.partNo || "", half: true },
+    { id: "code", label: "Item code", value: r.code || "", half: true, placeholder: "Made automatically", hint: rec ? "" : "Leave empty to create one, e.g. OIL-0001" },
+    { id: "partNo", label: "Maker's part number", value: r.partNo || "", half: true },
     { id: "fits", label: "Fits", value: r.fits || "", placeholder: "e.g. Axio, Fielder 2015+", half: true },
     { id: "reorder", label: "Reorder when down to", type: "number", value: r.reorder ?? 2, half: true },
     { id: "supplier", label: "Usual supplier", value: r.supplier || "", half: true },
@@ -3311,13 +3338,17 @@ function formItem(rec) {
     if (!v.name) return "Enter the item name";
     if (!rec && v.openQty > 0 && !(v.openCost > 0)) return "Enter what each one cost";
     const t = (x, n) => String(x || "").trim().slice(0, n);
-    const data = { name: t(v.name, 120), category: v.category, unit: v.unit, partNo: t(v.partNo, 60), fits: t(v.fits, 120), reorder: Math.max(0, Number(v.reorder) || 0), supplier: t(v.supplier, 120), notes: t(v.notes, 500), updatedAt: new Date().toISOString() };
+    let code = t(v.code, 30).toUpperCase();
+    const others = S.stockItems.filter(i => !rec || i.id !== rec.id).map(i => i.code).filter(Boolean);
+    if (code && others.includes(code)) return `Code ${code} is already used by another item`;
+    if (!code) code = nextCode(v.category, others);
+    const data = { code, name: t(v.name, 120), category: v.category, unit: v.unit, partNo: t(v.partNo, 60), fits: t(v.fits, 120), reorder: Math.max(0, Number(v.reorder) || 0), supplier: t(v.supplier, 120), notes: t(v.notes, 500), updatedAt: new Date().toISOString() };
     const ref = rec ? S.raw.doc(`orgs/${S.org}/stockItems/${rec.id}`) : S.raw.collection(`orgs/${S.org}/stockItems`).doc();
     return save(async () => {
       await ref.set(data, { merge: true });
       if (!rec && v.openQty > 0) await S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "in", itemId: ref.id, qty: Number(v.openQty), unitCost: Number(v.openCost), date: todayStr(), note: "Opening stock", by: S.uid, createdAt: new Date().toISOString() });
-    }, rec ? "Item updated" : "Item added");
-  }, { onDelete: rec && S.canManage ? () => { if (S.stockMoves.some(x => x.itemId === rec.id)) { toast("This item has movements. Adjust its count to zero instead."); return false; } return save(() => S.raw.doc(`orgs/${S.org}/stockItems/${rec.id}`).delete(), "Item deleted"); } : null });
+    }, rec ? "Item updated" : `Item added as ${code}`);
+  }, { onDelete: rec && S.canManage ? () => deleteItem(rec.id) : null });
 }
 function formReceive(itemId) {
   if (!S.stockItems.length) { formItem(); return; }
@@ -3384,6 +3415,32 @@ function formAdjust(itemId) {
     return save(() => S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "adjust", itemId, qty: diff, date: todayStr(), note: String(v.note || "Stock count").slice(0, 300), by: S.uid, createdAt: new Date().toISOString() }), "Count updated");
   }, { intro: `The app thinks there ${l.qty === 1 ? "is" : "are"} ${fmtQty(l.qty)}. Enter what you actually counted.` });
 }
+// Deleting an item removes it and its stock history. Costs already charged to cars stay on those cars.
+async function deleteItem(id) {
+  const it = stockItem(id); if (!it) return false;
+  const moves = S.stockMoves.filter(x => x.itemId === id);
+  if (moves.length && !confirm(`Delete ${it.name}${it.code ? " (" + it.code + ")" : ""} and its ${moves.length} stock movement${moves.length === 1 ? "" : "s"}? Costs already charged to cars stay on those cars.`)) return false;
+  return save(async () => {
+    for (let i = 0; i < moves.length; i += 400) {
+      const b = S.raw.batch();
+      for (const x of moves.slice(i, i + 400)) b.delete(S.raw.doc(`orgs/${S.org}/stockMoves/${x.id}`));
+      await b.commit();
+    }
+    await S.raw.doc(`orgs/${S.org}/stockItems/${id}`).delete();
+  }, "Item deleted");
+}
+function formPrice(id) {
+  const it = stockItem(id); if (!it) return;
+  const l = stockLevels()[id] || { qty: 0, avg: 0 };
+  openForm(`Change price: ${it.name}`, [
+    { id: "unitCost", label: "New cost each (KSh)", type: "number", value: l.avg ? Math.round(l.avg * 100) / 100 : "", required: true },
+    { id: "note", label: "Reason", value: "", placeholder: "e.g. Wrong price entered, supplier price went up" }
+  ], async v => {
+    if (!(v.unitCost >= 0) || v.unitCost === "") return "Enter the new price";
+    if (Math.abs(Number(v.unitCost) - l.avg) < 0.005) return true;
+    return save(() => S.raw.collection(`orgs/${S.org}/stockMoves`).doc().set({ type: "price", itemId: id, qty: 0, unitCost: Number(v.unitCost), date: todayStr(), note: String(v.note || "").slice(0, 300), by: S.uid, createdAt: new Date().toISOString() }), "Price updated");
+  }, { intro: `Now ${l.avg ? ksh(Math.round(l.avg)) : "no price"} each for the ${fmtQty(l.qty)} ${it.unit || "pcs"} in stock. The new price applies to stock used from now on; parts already charged to cars keep the price they were charged at.` });
+}
 async function undoMove(id) {
   const x = S.stockMoves.find(m => m.id === id); if (!x) return;
   const ok = await save(async () => {
@@ -3398,20 +3455,21 @@ function openItem(id) {
   const moves = S.stockMoves.filter(x => x.itemId === id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 20);
   const used = S.stockMoves.filter(x => x.itemId === id && x.type === "out");
   const byCar = {}; for (const x of used) byCar[x.carPlate || "?"] = (byCar[x.carPlate || "?"] || 0) + (Number(x.qty) || 0);
-  openSheet(it.name, `<div class="detail-grid">
+  openSheet(`${it.name}${it.code ? " · " + it.code : ""}`, `<div class="detail-grid">
       <div><span>In stock</span><b class="${Number(it.reorder) > 0 && l.qty <= Number(it.reorder) ? "stock-low" : ""}">${fmtQty(l.qty)} ${esc(it.unit || "pcs")}</b></div>
       <div><span>Average cost</span><b>${l.avg ? ksh(Math.round(l.avg)) : "—"}</b></div>
       <div><span>Value</span><b>${ksh(Math.round(l.value))}</b></div>
       <div><span>Reorder at</span><b>${fmtQty(Number(it.reorder) || 0)}</b></div>
-      <div><span>Part number</span><b>${esc(it.partNo || "—")}</b></div>
+      <div><span>Item code</span><b>${esc(it.code || "—")}</b></div>
+      <div><span>Maker's part number</span><b>${esc(it.partNo || "—")}</b></div>
       <div><span>Fits</span><b>${esc(it.fits || "—")}</b></div>
       <div><span>Supplier</span><b>${esc(it.supplier || "—")}</b></div>
       <div><span>Category</span><b>${esc(it.category || "")}</b></div>
     </div>
     ${it.notes ? `<p class="small">${esc(it.notes)}</p>` : ""}
-    <div class="row-actions" style="margin-top:12px"><button class="btn primary sm" data-action="st-out" data-v="${esc(id)}">Use on a car</button><button class="btn sm" data-action="st-in" data-v="${esc(id)}">Receive</button><button class="btn sm" data-action="st-adjust" data-v="${esc(id)}">Count</button><button class="btn sm" data-action="st-item" data-v="${esc(id)}">Edit</button></div>
+    <div class="row-actions" style="margin-top:12px"><button class="btn primary sm" data-action="st-out" data-v="${esc(id)}">Use on a car</button><button class="btn sm" data-action="st-in" data-v="${esc(id)}">Receive</button><button class="btn sm" data-action="st-adjust" data-v="${esc(id)}">Count</button><button class="btn sm" data-action="st-price" data-v="${esc(id)}">Change price</button><button class="btn sm" data-action="st-item" data-v="${esc(id)}">Edit</button>${S.canManage ? `<button class="btn sm danger" data-action="st-del" data-v="${esc(id)}">Delete</button>` : ""}</div>
     ${Object.keys(byCar).length ? `<h3>Used on</h3><p class="small">${Object.entries(byCar).sort((a, b) => b[1] - a[1]).map(([p, q]) => `${esc(p)}: ${fmtQty(q)}`).join(" · ")}</p>` : ""}
-    <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? "Received" : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : ""}${fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost))} each</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
+    <h3>History</h3>${moves.length ? `<div class="list">${moves.map(x => `<div class="li"><div class="main"><div class="t">${x.type === "in" ? "Received" : x.type === "out" ? "Used on " + esc(x.carPlate || "a car") : x.type === "price" ? "Price changed" : "Count adjusted"}</div><div class="small muted">${fmtDate(x.date)}${x.supplier ? " · " + esc(x.supplier) : ""}${x.note ? " · " + esc(x.note) : ""}</div></div><div class="end"><b class="num">${x.type === "price" ? "" : (x.type === "in" ? "+" : x.type === "out" ? "−" : x.qty > 0 ? "+" : "") + fmtQty(Math.abs(Number(x.qty)))}</b>${x.unitCost ? `<div class="small muted">${ksh(Math.round(x.unitCost))} each</div>` : ""}</div></div>`).join("")}</div>` : `<div class="small muted">No movements yet.</div>`}`);
 }
 
 function ownerAdd() {
@@ -3461,7 +3519,8 @@ document.addEventListener("click", async e => {
     case "st-out": formUse(v); break;
     case "st-adjust": formAdjust(v); break;
     case "st-undo": { if (!confirmTap(el, "Tap again to undo")) break; undoMove(v); break; }
-    case "st-del": { if (!confirmTap(el, "Tap again to delete")) break; if (await save(() => S.raw.doc(`orgs/${S.org}/stockItems/${v}`).delete(), "Item deleted")) closeSheet(); break; }
+    case "st-del": { if (!confirmTap(el, "Tap again to delete")) break; if (await deleteItem(v)) closeSheet(); break; }
+    case "st-price": formPrice(v); break;
     case "k-view": openContract(v); break;
     case "k-send": sendContract(v); break;
     case "k-sign": openSignSheet(v, el.dataset.role || ""); break;
