@@ -353,7 +353,7 @@ const S = {
   db: null, raw: null, user: null, canWrite: true,
   role: null, fleet: null, fleets: [], fleetsReady: false, subsBy: {}, subWatch: {}, mySubs: [], ownerState: "loading", fleetMeta: null,
   mode: "loading", org: null, orgName: "", orgs: [], staffRole: null, canManage: false, isAdmin: false, accessRole: null, myAccess: [],
-  incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
+  waiting: new Set(), recordsReady: false, incidents: [], members: [], names: {}, top: [], accessBy: {}, accWatch: {}, evBy: {}, evWatch: {}, evKnown: new Set(), evReady: new Set(), seenAt: "", driverId: null, stmt: null, stmtReady: false, join: null, me: {},
   cars: [], drivers: [], assigns: [], settings: { ...DEFAULT_SETTINGS },
   months: {},          // "YYYY-MM" -> {payments:[], expenses:[], downtime:[], odo:[]}
   loadedMonths: new Set(), subs: [], coreReady: { cars: false, drivers: false, assigns: false, settings: false },
@@ -654,6 +654,7 @@ function resetFleetState() {
   S.subs = []; S.cars = []; S.drivers = []; S.assigns = []; S.settings = { ...DEFAULT_SETTINGS };
   S.months = {}; S.loadedMonths = new Set(); S.coreReady = { cars: false, drivers: false, assigns: false, settings: false };
   S.act = {}; S.vis = {}; S.actLoaded = false; S.detail = null; S.calc = null; S._sumKey = null; S.incidents = [];
+  S.waiting = new Set(); S.recordsReady = false; clearTimeout(S._readyTimer); S._readyTimer = null;
 }
 
 function loadFleet() {
@@ -849,16 +850,22 @@ function afterCore() {
   const T = todayStr();
   const months = monthsBetween(monthOf(trackStart()), monthOf(T));
   const live = new Set(months.slice(-12));
+  const fleetAtStart = S.fleet;
+  // Figures stay hidden until every month's records have arrived once, so nothing flashes with half the data
+  const done = key => { if (S.fleet !== fleetAtStart) return; S.waiting.delete(key); if (!S.waiting.size && !S.recordsReady) { S.recordsReady = true; clearTimeout(S._readyTimer); } };
   for (const m of months) {
     if (S.loadedMonths.has(m)) continue;
     S.loadedMonths.add(m);
     monthBucket(m);
     for (const k of KINDS) {
+      const key = m + "/" + k; S.waiting.add(key);
       const col = S.db.collection(`months/${m}/${k}`);
-      if (live.has(m)) S.subs.push(col.onSnapshot(snap => { monthBucket(m)[k] = snapRows(snap); render(); }, e => setSync("Data unavailable: " + e.code)));
-      else col.get().then(snap => { monthBucket(m)[k] = snapRows(snap); render(); }).catch(() => {});
+      if (live.has(m)) S.subs.push(col.onSnapshot(snap => { monthBucket(m)[k] = snapRows(snap); done(key); render(); }, e => { done(key); setSync("Data unavailable: " + e.code); render(); }));
+      else col.get().then(snap => { monthBucket(m)[k] = snapRows(snap); done(key); render(); }).catch(() => { done(key); render(); });
     }
   }
+  if (!S.waiting.size) S.recordsReady = true;
+  else if (!S._readyTimer) S._readyTimer = setTimeout(() => { S._readyTimer = null; if (!S.recordsReady) { S.recordsReady = true; render(); } }, 15000);
   render();
 }
 
@@ -935,6 +942,11 @@ function render() {
     v.innerHTML = viewOwners(); fillNames(); return;
   }
   if (!Object.values(S.coreReady).every(Boolean)) return;
+  if (!S.recordsReady) {
+    v.innerHTML = `<div class="attn clear" style="border-top-color:rgba(255,255,255,.35)"><div class="attn-head"><h2>Needs attention</h2></div><div class="clear-msg">Checking payments, expenses and mileage…</div></div><div class="card empty">Loading fleet figures…</div>`;
+    document.getElementById("fab").style.display = "none";
+    return;
+  }
   S.calc = compute();
   if (S.mode === "staff") { saveSummary(S.calc); saveStatements(S.calc); }
   if (S.view === "insights") ensureActivity();
@@ -1915,7 +1927,7 @@ function renderChrome() {
 function saveSummary(c) {
   if (!S.fleet || !S.canManage) return;
   const m = monthOf(c.T), fm = c.fleetM[m] || { rev: 0, cost: 0, exp: 0 };
-  const sum = { month: m, collected: Math.round(fm.rev), expected: Math.round(fm.exp), costs: Math.round(fm.cost), net: Math.round(fm.rev - fm.cost), arrears: Math.round(c.tot.arrears), cars: c.cars.filter(x => !x.soldDate || x.soldDate > c.T).length, alerts: c.alerts.filter(a => a.sev === "bad").length };
+  const sum = { month: m, collected: Math.round(fm.rev), expected: Math.round(fm.exp), costs: Math.round(fm.cost), net: Math.round(fm.rev - fm.cost), arrears: Math.round(c.tot.arrears), cars: c.cars.filter(x => !x.soldDate || x.soldDate > c.T).length, drivers: S.drivers.filter(d => d.status !== "left" && !(d.settlement && d.settlement.date)).length, driving: c.drivers.filter(d => d.assign).length, alerts: c.alerts.filter(a => a.sev === "bad").length };
   const key = JSON.stringify(sum);
   if (key === S._sumKey) return;
   const prev = S.fleetMeta && S.fleetMeta.summary ? JSON.stringify(S.fleetMeta.summary) : null;
@@ -1956,7 +1968,7 @@ const ownersOf = fid => (S.accessBy[fid] || []).filter(a => a.role === "owner").
 function viewOwners() {
   const fl = S.fleets, m = monthOf(todayStr());
   const cur = f => f.summary && f.summary.month === m ? f.summary : null;
-  const tot = fl.reduce((t, f) => { const s = cur(f); if (s) { t.collected += s.collected; t.expected += s.expected; t.net += s.net; } if (f.summary) { t.arrears += f.summary.arrears; t.cars += f.summary.cars; } return t; }, { collected: 0, expected: 0, net: 0, arrears: 0, cars: 0 });
+  const tot = fl.reduce((t, f) => { const s = cur(f); if (s) { t.collected += s.collected; t.expected += s.expected; t.net += s.net; } if (f.summary) { t.arrears += f.summary.arrears; t.cars += f.summary.cars; t.drivers += f.summary.drivers || 0; } return t; }, { collected: 0, expected: 0, net: 0, arrears: 0, cars: 0, drivers: 0 });
   const n = pendingAll();
   const head = `<div class="section-head"><h2>Fleets</h2><div class="row-actions"><button class="btn sm" data-action="team">Team</button>${S.canManage ? `<button class="btn primary sm" data-action="new-fleet">Add fleet</button>` : ""}</div></div>`;
   if (!fl.length) return `<div class="section">${head}<div class="card"><h3>Set up your first fleet</h3><div class="steps small">
@@ -1967,13 +1979,13 @@ function viewOwners() {
   const kpis = `<div class="card"><h3>All fleets · ${fmtMonth(m)} to date</h3><div class="detail-grid" style="margin-top:8px">
     <div><span>Collected</span><b>${ksh(tot.collected)}</b></div><div><span>Expected</span><b>${ksh(tot.expected)}</b></div>
     <div><span>Owners' net</span><b>${ksh(tot.net)}</b></div><div><span>Drivers owe</span><b>${ksh(tot.arrears)}</b></div>
-    <div><span>Cars</span><b>${tot.cars}</b></div><div><span>Waiting approval</span><b>${n}</b></div></div>
+    <div><span>Cars</span><b>${tot.cars}</b></div><div><span>Drivers</span><b>${tot.drivers}</b></div><div><span>Waiting approval</span><b>${n}</b></div></div>
     <p class="small muted" style="margin:8px 0 0">A fleet's figures refresh when a manager opens it.</p></div>`;
   const rows = fl.map(f => {
     const s = cur(f), p = pendingFor(f.id).length, own = ownersOf(f.id);
     return `<div class="card ownrow" data-action="pick-fleet" data-v="${esc(f.id)}"><div class="section-head" style="margin:0"><h3 style="margin:0">${esc(f.name || "Unnamed fleet")}${p ? `<span class="count" title="Expenses waiting for approval">${p}</span>` : ""}</h3>${S.canManage ? `<div class="row-actions"><button class="btn sm" data-action="fleet-people" data-v="${esc(f.id)}">People</button><button class="btn sm" data-action="edit-fleet" data-v="${esc(f.id)}">Rename</button></div>` : ""}</div>
       <div class="small muted">${own.length ? "Owner: " + esc(own.join(", ")) : "No owner has joined yet"}${f.summaryAt ? ` · updated ${esc(timeAgo(f.summaryAt))}` : " · not opened yet"}</div>
-      ${s ? `<div class="figs"><div><span>Collected</span><b>${ksh(s.collected)}</b></div><div><span>Expected</span><b>${ksh(s.expected)}</b></div><div><span>Net</span><b>${ksh(s.net)}</b></div><div><span>Drivers owe</span><b>${ksh(s.arrears)}</b></div><div><span>Cars</span><b>${s.cars}</b></div><div><span>Urgent alerts</span><b>${s.alerts}</b></div></div>` : `<p class="small muted" style="margin:8px 0 0">No figures for ${fmtMonth(m)} yet. Open the fleet to calculate them.</p>`}
+      ${s ? `<div class="figs"><div><span>Collected</span><b>${ksh(s.collected)}</b></div><div><span>Expected</span><b>${ksh(s.expected)}</b></div><div><span>Net</span><b>${ksh(s.net)}</b></div><div><span>Drivers owe</span><b>${ksh(s.arrears)}</b></div><div><span>Cars</span><b>${s.cars}</b></div><div><span>Drivers</span><b>${s.drivers != null ? s.drivers : "—"}</b>${s.drivers != null && s.driving !== s.drivers ? `<div class="small muted">${s.driving} with a car</div>` : ""}</div><div><span>Urgent alerts</span><b>${s.alerts}</b></div></div>` : `<p class="small muted" style="margin:8px 0 0">No figures for ${fmtMonth(m)} yet. Open the fleet to calculate them.</p>`}
     </div>`;
   }).join("");
   return `<div class="section">${head}${kpis}${rows}</div>`;

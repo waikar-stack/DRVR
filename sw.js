@@ -1,7 +1,7 @@
 // DRYVR service worker: lets the app open without a connection.
 // Pages are fetched fresh when online and fall back to the saved copy offline.
 // Data is not cached here; Firebase keeps its own offline copy.
-const CACHE = "dryvr-shell-v8";
+const CACHE = "dryvr-shell-v10";
 const SHELL = ["./", "./index.html", "./firebase-config.js", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./logo.png", "./logo-dark.png", "./logo-full.png", "./logo-full-dark.png"];
 
 self.addEventListener("install", e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL))); });
